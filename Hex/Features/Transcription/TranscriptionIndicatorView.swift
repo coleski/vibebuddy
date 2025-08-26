@@ -25,7 +25,7 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    ZStack {
+    VStack(spacing: 0) {
       ScrollView(.vertical, showsIndicators: false) {
         Text(response)
           .font(.system(size: 14))
@@ -33,32 +33,26 @@ struct AIResponseModal: View {
           .lineSpacing(4)
           .multilineTextAlignment(.leading)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(20) // Equal padding on all sides
-          .padding(.trailing, 20) // Extra padding to avoid X button overlap
+          .padding(20)
       }
-      .frame(maxWidth: 400)
-      .frame(maxHeight: 600)
-      
-      // Floating X button with white circle background
-      VStack {
-        HStack {
-          Spacer()
-          Button(action: {
-            dismissTask?.cancel()
-            fadeOutAndDismiss()
-          }) {
-            Image(systemName: "xmark")
-              .font(.system(size: 10, weight: .bold))
-              .foregroundColor(.black)
-              .frame(width: 18, height: 18)
-              .background(Circle().fill(Color.white.opacity(0.9)))
-              .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-          }
-          .buttonStyle(.plain)
-        }
-        Spacer()
+    }
+    .frame(minWidth: 100, maxWidth: 400)
+    .frame(maxHeight: 600)
+    .overlay(alignment: .topTrailing) {
+      // Floating X button with white circle background - overlapping padding
+      Button(action: {
+        dismissTask?.cancel()
+        fadeOutAndDismiss()
+      }) {
+        Image(systemName: "xmark")
+          .font(.system(size: 8, weight: .bold))
+          .foregroundColor(.black)
+          .frame(width: 14, height: 14)
+          .background(Circle().fill(Color.white.opacity(0.95)))
+          .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
       }
-      .padding(10) // Position inside the modal
+      .buttonStyle(.plain)
+      .padding(6) // Very close to edge, overlapping text padding
     }
     .background(
       ZStack {
