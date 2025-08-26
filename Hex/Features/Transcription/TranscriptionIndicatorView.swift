@@ -25,34 +25,27 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(alignment: .bottom, spacing: 0) {
-        Text(response)
-          .font(.system(size: 14))
-          .foregroundColor(.black)
-          .lineSpacing(4)
-          .multilineTextAlignment(.leading)
-        
-        Text("  ") // Add some spacing
-          .font(.system(size: 14))
-        
-        // Inline X button
+    Text(response)
+      .font(.system(size: 14))
+      .foregroundColor(.black)
+      .lineSpacing(4)
+      .multilineTextAlignment(.leading)
+      .padding(20) // Equal padding on all sides
+      .frame(maxWidth: 400, alignment: .leading)
+      .fixedSize()
+      .overlay(alignment: .topTrailing) {
+        // White X button in upper-right corner, inside the padding
         Button(action: {
           dismissTask?.cancel()
           fadeOutAndDismiss()
         }) {
           Image(systemName: "xmark")
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: 12, weight: .medium))
             .foregroundColor(.white)
-            .frame(width: 16, height: 16)
-            .background(Circle().fill(Color.black.opacity(0.5)))
         }
         .buttonStyle(.plain)
+        .padding(8) // Position inside the modal padding
       }
-      .padding(20) // Equal padding on all sides
-      .frame(maxWidth: 400, alignment: .leading)
-      .fixedSize()
-    }
     .background(
       ZStack {
         // Glass effect with blur
