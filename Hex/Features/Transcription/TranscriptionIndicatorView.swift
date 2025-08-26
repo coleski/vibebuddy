@@ -30,9 +30,9 @@ struct AIResponseModal: View {
       .foregroundColor(.black)
       .lineSpacing(4)
       .multilineTextAlignment(.leading)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(minWidth: 200, idealWidth: 300, maxWidth: 500, alignment: .leading)
       .padding(20)
+      .frame(maxWidth: 400, alignment: .leading)
+      .fixedSize()
       .overlay(alignment: .bottomTrailing) {
         // Dismiss X button inline with text
         Button(action: {
@@ -61,7 +61,6 @@ struct AIResponseModal: View {
       }
       .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
     )
-    .fixedSize(horizontal: true, vertical: true)
     .opacity(opacity)
         .onHover { hovering in
           isHovered = hovering
