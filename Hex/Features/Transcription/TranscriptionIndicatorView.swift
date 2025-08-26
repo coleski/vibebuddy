@@ -25,17 +25,18 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    Text(response)
-      .font(.system(size: 14))
-      .foregroundColor(.black)
-      .lineSpacing(4)
-      .multilineTextAlignment(.leading)
-      .padding(.trailing, 30) // Extra right padding to prevent overlap with X button
-      .padding(20) // Equal padding on all sides
-      .frame(maxWidth: 400, alignment: .leading)
-      .fixedSize()
-      .overlay(alignment: .bottomTrailing) {
-        // Dismiss X button inline with text
+    ViewThatFits(in: .horizontal) {
+      HStack(alignment: .bottom, spacing: 0) {
+        Text(response)
+          .font(.system(size: 14))
+          .foregroundColor(.black)
+          .lineSpacing(4)
+          .multilineTextAlignment(.leading)
+        
+        Text("  ") // Add some spacing
+          .font(.system(size: 14))
+        
+        // Inline X button
         Button(action: {
           dismissTask?.cancel()
           fadeOutAndDismiss()
@@ -47,9 +48,11 @@ struct AIResponseModal: View {
             .background(Circle().fill(Color.black.opacity(0.5)))
         }
         .buttonStyle(.plain)
-        .padding(.trailing, 20)
-        .padding(.bottom, 20)
       }
+      .padding(20) // Equal padding on all sides
+      .frame(maxWidth: 400, alignment: .leading)
+      .fixedSize()
+    }
     .background(
       ZStack {
         // Glass effect with blur
