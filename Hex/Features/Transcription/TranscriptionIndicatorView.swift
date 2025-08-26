@@ -25,29 +25,40 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    ScrollView(.vertical) {
-      Text(response)
-        .font(.system(size: 14))
-        .foregroundColor(.black)
-        .lineSpacing(4)
-        .multilineTextAlignment(.leading)
-        .fixedSize(horizontal: false, vertical: true) // allow wrapping
-        .frame(maxWidth: 400, alignment: .leading)    // cap width
-        .padding(20) // Equal padding on all sides
-    }
-    .frame(maxWidth: 400, maxHeight: 600)               // outer bounds (600 for better UX than 1000)
-    .overlay(alignment: .topTrailing) {
-      // White X button in upper-right corner, inside the padding
-      Button(action: {
-        dismissTask?.cancel()
-        fadeOutAndDismiss()
-      }) {
-        Image(systemName: "xmark")
-          .font(.system(size: 12, weight: .medium))
-          .foregroundColor(.white)
+    ZStack {
+      ScrollView(.vertical, showsIndicators: false) {
+        Text(response)
+          .font(.system(size: 14))
+          .foregroundColor(.black)
+          .lineSpacing(4)
+          .multilineTextAlignment(.leading)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(20) // Equal padding on all sides
+          .padding(.trailing, 20) // Extra padding to avoid X button overlap
       }
-      .buttonStyle(.plain)
-      .padding(8) // Position inside the modal padding
+      .frame(maxWidth: 400)
+      .frame(maxHeight: 600)
+      
+      // Floating X button with white circle background
+      VStack {
+        HStack {
+          Spacer()
+          Button(action: {
+            dismissTask?.cancel()
+            fadeOutAndDismiss()
+          }) {
+            Image(systemName: "xmark")
+              .font(.system(size: 10, weight: .bold))
+              .foregroundColor(.black)
+              .frame(width: 18, height: 18)
+              .background(Circle().fill(Color.white.opacity(0.9)))
+              .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+          }
+          .buttonStyle(.plain)
+        }
+        Spacer()
+      }
+      .padding(10) // Position inside the modal
     }
     .background(
       ZStack {
