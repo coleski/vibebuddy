@@ -287,6 +287,9 @@ private extension TranscriptionFeature {
   func handleStartRecording(_ state: inout State) -> Effect<Action> {
     state.isRecording = true
     state.recordingStartTime = Date()
+    
+    // Clear any previous AI response when starting new recording
+    state.aiResponse = nil
 
     // Prevent system sleep during recording
     if state.hexSettings.preventSystemSleep {

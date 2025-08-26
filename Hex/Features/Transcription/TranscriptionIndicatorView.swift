@@ -15,7 +15,6 @@ struct AIResponseModal: View {
   @State private var isHovered = false
   @State private var dismissTask: Task<Void, Never>?
   @State private var opacity: Double = 1.0
-  @FocusState private var isFocused: Bool
   
   // Calculate dismiss delay based on text length (min 4 seconds, max 8 seconds)
   var dismissDelay: TimeInterval {
@@ -26,40 +25,44 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    ZStack {
-      // Semi-transparent background overlay for click-to-dismiss
-      Color.black.opacity(0.001)
-        .ignoresSafeArea()
-        .frame(width: 2000, height: 2000)
-        .onTapGesture {
-          print("[AI Modal] Background overlay clicked - dismissing")
+    (Text(response) + Text("  ")) // Add spacing
+      .font(.system(size: 14))
+      .foregroundColor(.black)
+      .lineSpacing(4)
+      .multilineTextAlignment(.leading)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(minWidth: 200, idealWidth: 300, maxWidth: 500, alignment: .leading)
+      .padding(20)
+      .overlay(alignment: .bottomTrailing) {
+        // Dismiss X button inline with text
+        Button(action: {
           dismissTask?.cancel()
           fadeOutAndDismiss()
+        }) {
+          Image(systemName: "xmark")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(.white)
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(Color.black.opacity(0.5)))
         }
-      
-      // Modal content
-      Text(response)
-        .font(.system(size: 14))
-        .foregroundColor(.black)
-        .lineSpacing(4)
-        .multilineTextAlignment(.leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(minWidth: 200, idealWidth: 300, maxWidth: 500, alignment: .leading)
-        .padding(20)
-        .background(
-          ZStack {
-            // Glass effect with blur
-            RoundedRectangle(cornerRadius: 12)
-              .fill(.ultraThinMaterial)
-            
-            // Subtle white overlay for better text readability
-            RoundedRectangle(cornerRadius: 12)
-              .fill(Color.white.opacity(0.3))
-          }
-          .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-        )
-        .fixedSize(horizontal: true, vertical: true)
-        .opacity(opacity)
+        .buttonStyle(.plain)
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
+      }
+    .background(
+      ZStack {
+        // Glass effect with blur
+        RoundedRectangle(cornerRadius: 12)
+          .fill(.ultraThinMaterial)
+        
+        // Subtle white overlay for better text readability
+        RoundedRectangle(cornerRadius: 12)
+          .fill(Color.white.opacity(0.3))
+      }
+      .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
+    )
+    .fixedSize(horizontal: true, vertical: true)
+    .opacity(opacity)
         .onHover { hovering in
           isHovered = hovering
           if hovering {
@@ -69,25 +72,12 @@ struct AIResponseModal: View {
           }
           // Don't restart timer when hover ends - stay permanent once hovered
         }
-        .onTapGesture {
-          // Empty tap gesture to prevent click-through to background
-          print("[AI Modal] Modal content clicked - not dismissing")
-        }
-    }
-    .focused($isFocused)
     .onAppear {
-      print("[AI Modal] Modal appeared - starting timer, focusing for keyboard events")
-      isFocused = true
+      print("[AI Modal] Modal appeared - starting timer")
       startDismissTimer()
     }
     .onDisappear {
       dismissTask?.cancel()
-    }
-    .onKeyPress(.escape) {
-      print("[AI Modal] Escape key pressed - dismissing")
-      dismissTask?.cancel()
-      fadeOutAndDismiss()
-      return .handled
     }
   }
   
@@ -243,9 +233,9 @@ struct TranscriptionIndicatorView: View {
           width: (status == .recording || status == .aiRecording) ? expandedWidth : baseWidth,
           height: baseWidth
         )
-        .opacity(status == .hidden ? 0 : 1)
-        .scaleEffect(status == .hidden ? 0.0 : 1)
-        .blur(radius: status == .hidden ? 4 : 0)
+        .opacity(status == .hidden || status == .aiResponse ? 0 : 1)
+        .scaleEffect(status == .hidden || status == .aiResponse ? 0.0 : 1)
+        .blur(radius: status == .hidden || status == .aiResponse ? 4 : 0)
         .animation(.bouncy(duration: 0.3), value: status)
         .changeEffect(.glow(color: .red.opacity(0.5), radius: 8), value: status)
         .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
@@ -276,8 +266,8 @@ struct TranscriptionIndicatorView: View {
       }
       
     }
-    .overlay(alignment: .center) {
-      // Show AI response modal as overlay (appears at same position as indicator)
+    .overlay(alignment: .top) {
+      // Show AI response modal as overlay (aligns top edge with indicator)
       if status == .aiResponse, let response = aiResponse {
         AIResponseModal(
           response: response,

@@ -28,9 +28,12 @@ extension OllamaClient: DependencyKey {
       request.httpMethod = "POST"
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
       
+      let systemPrompt = "Give the most direct answer possible. For calculations, just the number. For questions, just the answer. No explanations, no full sentences unless absolutely necessary. Be extremely brief."
+      
       let body: [String: Any] = [
         "model": model,
         "prompt": prompt,
+        "system": systemPrompt,
         "stream": false
       ]
       
