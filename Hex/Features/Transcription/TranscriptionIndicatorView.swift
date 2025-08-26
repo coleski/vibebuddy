@@ -25,30 +25,29 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    (Text(response) + Text("  ")) // Add spacing
-      .font(.system(size: 14))
-      .foregroundColor(.black)
-      .lineSpacing(4)
-      .multilineTextAlignment(.leading)
-      .padding(20)
-      .frame(maxWidth: 400, alignment: .leading)
-      .fixedSize()
-      .overlay(alignment: .bottomTrailing) {
-        // Dismiss X button inline with text
-        Button(action: {
-          dismissTask?.cancel()
-          fadeOutAndDismiss()
-        }) {
-          Image(systemName: "xmark")
-            .font(.system(size: 10, weight: .bold))
-            .foregroundColor(.white)
-            .frame(width: 16, height: 16)
-            .background(Circle().fill(Color.black.opacity(0.5)))
-        }
-        .buttonStyle(.plain)
-        .padding(.trailing, 20)
-        .padding(.bottom, 20)
+    HStack(alignment: .top, spacing: 8) {
+      Text(response)
+        .font(.system(size: 14))
+        .foregroundColor(.black)
+        .lineSpacing(4)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: 400, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+      
+      // Dismiss X button with proper spacing
+      Button(action: {
+        dismissTask?.cancel()
+        fadeOutAndDismiss()
+      }) {
+        Image(systemName: "xmark")
+          .font(.system(size: 10, weight: .bold))
+          .foregroundColor(.white)
+          .frame(width: 16, height: 16)
+          .background(Circle().fill(Color.black.opacity(0.5)))
       }
+      .buttonStyle(.plain)
+    }
+    .padding(20) // Equal padding on all sides
     .background(
       ZStack {
         // Glass effect with blur
