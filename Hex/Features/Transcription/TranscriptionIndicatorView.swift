@@ -25,19 +25,31 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    VStack(spacing: 0) {
-      ScrollView(.vertical, showsIndicators: false) {
+    Group {
+      if response.count < 500 {
+        // For short text, no scroll needed
         Text(response)
           .font(.system(size: 14))
           .foregroundColor(.black)
           .lineSpacing(4)
           .multilineTextAlignment(.leading)
-          .frame(maxWidth: .infinity, alignment: .leading)
           .padding(20)
+          .frame(maxWidth: 400, alignment: .leading)
+          .fixedSize(horizontal: false, vertical: true)
+      } else {
+        // For long text, use ScrollView
+        ScrollView(.vertical, showsIndicators: true) {
+          Text(response)
+            .font(.system(size: 14))
+            .foregroundColor(.black)
+            .lineSpacing(4)
+            .multilineTextAlignment(.leading)
+            .padding(20)
+            .frame(maxWidth: 400, alignment: .leading)
+        }
+        .frame(maxHeight: 600)
       }
     }
-    .frame(minWidth: 100, maxWidth: 400)
-    .frame(maxHeight: 600)
     .overlay(alignment: .topTrailing) {
       // Floating X button with white circle background - overlapping padding
       Button(action: {
