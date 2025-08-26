@@ -56,9 +56,6 @@ struct TranscriptionFeature {
     case aiResponseReceived(String)
     case aiGenerationError(Error)
     case clearAIResponse
-    
-    // Test Ollama
-    case testOllama
   }
 
   enum CancelID {
@@ -80,14 +77,12 @@ struct TranscriptionFeature {
       // MARK: - Lifecycle / Setup
 
       case .task:
-        // Starts concurrent effects:
+        // Starts two concurrent effects:
         // 1) Observing audio meter
         // 2) Monitoring hot key events
-        // 3) Test Ollama connection
         return .merge(
           startMeteringEffect(),
-          startHotKeyMonitoringEffect(),
-          .send(.testOllama)
+          startHotKeyMonitoringEffect()
         )
 
       // MARK: - Metering
@@ -157,25 +152,6 @@ struct TranscriptionFeature {
         }
         return handleCancel(&state)
         
-      // MARK: - Test Ollama
-      case .testOllama:
-        return .run { send in
-          print("🤖 Testing Ollama connection...")
-          do {
-            let isRunning = await ollama.isRunning()
-            print("🤖 Ollama running: \(isRunning)")
-            
-            if isRunning {
-              print("🤖 Generating test response with llama3.2:1b...")
-              let response = try await ollama.generate("Say hello in one sentence", "llama3.2:1b")
-              print("🤖 Ollama response: \(response)")
-            } else {
-              print("🤖 Ollama is not running. Please start it with: ollama serve")
-            }
-          } catch {
-            print("🤖 Ollama error: \(error)")
-          }
-        }
       }
     }
   }
@@ -241,9 +217,9 @@ private extension TranscriptionFeature {
           if hotKeyProcessor.state == .doubleTapLock {
             Task { await send(.startRecording) }
           } else {
-            // Start recording in normal mode, will switch to AI if 'a' is pressed
+            // Start recording, will switch to AI if 'a' is pressed
             Task { 
-              await send(.setAIMode(false)) // Reset to normal mode
+              await send(.setAIMode(false))
               await send(.hotKeyPressed(isAIMode: false)) 
             }
           }
@@ -253,11 +229,9 @@ private extension TranscriptionFeature {
 
         case .stopRecording:
           isCurrentlyRecording = false
-          // AI mode was already set when 'a' was pressed
-          isAIKeyHeld = false // Reset for next recording
-          
+          isAIKeyHeld = false
           Task { await send(.hotKeyReleased) }
-          return false // or `true` if you want to intercept
+          return false
 
         case .cancel:
           Task { await send(.cancel) }
@@ -313,7 +287,6 @@ private extension TranscriptionFeature {
   func handleStartRecording(_ state: inout State) -> Effect<Action> {
     state.isRecording = true
     state.recordingStartTime = Date()
-    // Note: isAIMode should be set by the caller if AI key is held
 
     // Prevent system sleep during recording
     if state.hexSettings.preventSystemSleep {
@@ -404,12 +377,9 @@ private extension TranscriptionFeature {
       
       return .run { send in
         do {
-          print("🤖 Sending to Ollama: \(result)")
           let response = try await ollama.generate(result, model)
-          print("🤖 Received from Ollama: \(response)")
           await send(.aiResponseReceived(response))
         } catch {
-          print("🤖 Ollama error: \(error)")
           await send(.aiGenerationError(error))
         }
       }

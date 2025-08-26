@@ -58,14 +58,13 @@ struct AIResponseModal: View {
       }
     }
     .onTapGesture {
-      // Do nothing - prevent dismissal on modal click
+      // Prevent dismissal on modal click
     }
     .background(
       Color.clear
         .contentShape(Rectangle())
         .frame(width: 2000, height: 2000)
         .onTapGesture {
-          // Dismiss on background click
           dismissTask?.cancel()
           onDismiss()
         }
@@ -106,7 +105,6 @@ struct TranscriptionIndicatorView: View {
 
   let transcribeBaseColor: Color = .blue
   let aiBaseColor: Color = .purple
-  let aiProcessingColor: Color = Color(red: 0.5, green: 0.3, blue: 0.8) // Purple-blue
 
   private var backgroundColor: Color {
     switch status {
