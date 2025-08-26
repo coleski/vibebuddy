@@ -25,27 +25,30 @@ struct AIResponseModal: View {
   }
   
   var body: some View {
-    Text(response)
-      .font(.system(size: 14))
-      .foregroundColor(.black)
-      .lineSpacing(4)
-      .multilineTextAlignment(.leading)
-      .padding(20) // Equal padding on all sides
-      .frame(maxWidth: 400, alignment: .leading)
-      .fixedSize()
-      .overlay(alignment: .topTrailing) {
-        // White X button in upper-right corner, inside the padding
-        Button(action: {
-          dismissTask?.cancel()
-          fadeOutAndDismiss()
-        }) {
-          Image(systemName: "xmark")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.white)
-        }
-        .buttonStyle(.plain)
-        .padding(8) // Position inside the modal padding
+    ScrollView(.vertical) {
+      Text(response)
+        .font(.system(size: 14))
+        .foregroundColor(.black)
+        .lineSpacing(4)
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true) // allow wrapping
+        .frame(maxWidth: 400, alignment: .leading)    // cap width
+        .padding(20) // Equal padding on all sides
+    }
+    .frame(maxWidth: 400, maxHeight: 600)               // outer bounds (600 for better UX than 1000)
+    .overlay(alignment: .topTrailing) {
+      // White X button in upper-right corner, inside the padding
+      Button(action: {
+        dismissTask?.cancel()
+        fadeOutAndDismiss()
+      }) {
+        Image(systemName: "xmark")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundColor(.white)
       }
+      .buttonStyle(.plain)
+      .padding(8) // Position inside the modal padding
+    }
     .background(
       ZStack {
         // Glass effect with blur
