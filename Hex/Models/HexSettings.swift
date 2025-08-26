@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
+import Sauce
 
 // To add a new setting, add a new property to the struct, the CodingKeys enum, and the custom decoder
 struct HexSettings: Codable, Equatable {
@@ -19,6 +20,8 @@ struct HexSettings: Codable, Equatable {
 	var selectedMicrophoneID: String? = nil
 	var saveTranscriptionHistory: Bool = true
 	var maxHistoryEntries: Int? = nil
+	var aiKey: Key = .a
+	var selectedOllamaModel: String = "llama3.2:1b"
 
 	// Define coding keys to match struct properties
 	enum CodingKeys: String, CodingKey {
@@ -37,6 +40,8 @@ struct HexSettings: Codable, Equatable {
 		case selectedMicrophoneID
 		case saveTranscriptionHistory
 		case maxHistoryEntries
+		case aiKey
+		case selectedOllamaModel
 	}
 
 	init(
@@ -54,7 +59,9 @@ struct HexSettings: Codable, Equatable {
 		outputLanguage: String? = nil,
 		selectedMicrophoneID: String? = nil,
 		saveTranscriptionHistory: Bool = true,
-		maxHistoryEntries: Int? = nil
+		maxHistoryEntries: Int? = nil,
+		aiKey: Key = .a,
+		selectedOllamaModel: String = "llama3.2:1b"
 	) {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.hotkey = hotkey
@@ -71,6 +78,8 @@ struct HexSettings: Codable, Equatable {
 		self.selectedMicrophoneID = selectedMicrophoneID
 		self.saveTranscriptionHistory = saveTranscriptionHistory
 		self.maxHistoryEntries = maxHistoryEntries
+		self.aiKey = aiKey
+		self.selectedOllamaModel = selectedOllamaModel
 	}
 
 	// Custom decoder that handles missing fields
@@ -104,6 +113,10 @@ struct HexSettings: Codable, Equatable {
 		saveTranscriptionHistory =
 			try container.decodeIfPresent(Bool.self, forKey: .saveTranscriptionHistory) ?? true
 		maxHistoryEntries = try container.decodeIfPresent(Int.self, forKey: .maxHistoryEntries)
+		aiKey =
+			try container.decodeIfPresent(Key.self, forKey: .aiKey) ?? .a
+		selectedOllamaModel =
+			try container.decodeIfPresent(String.self, forKey: .selectedOllamaModel) ?? "llama3.2:1b"
 	}
 }
 

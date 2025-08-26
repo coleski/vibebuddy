@@ -11,3 +11,8 @@ buildServer.json
 bin
 scripts
 ExportOptions.plist
+
+# Task Master AI
+.task-master/
+task-master.config.json
+.tm-cache/
