@@ -14,17 +14,30 @@ struct AIResponseModal: View {
   
   @State private var isHovered = false
   @State private var dismissTask: Task<Void, Never>?
+  @State private var opacity: Double = 1.0
+  @FocusState private var isFocused: Bool
   
-  // Calculate dismiss delay based on text length (min 3 seconds, max 10 seconds)
+  // Calculate dismiss delay based on text length (min 4 seconds, max 8 seconds)
   var dismissDelay: TimeInterval {
-    let wordsPerMinute = 200.0
+    let wordsPerMinute = 250.0
     let words = Double(response.split(separator: " ").count)
     let readingTime = (words / wordsPerMinute) * 60
-    return min(max(readingTime + 2, 3), 10)
+    return min(max(readingTime + 3, 4), 8)
   }
   
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    ZStack {
+      // Semi-transparent background overlay for click-to-dismiss
+      Color.black.opacity(0.001)
+        .ignoresSafeArea()
+        .frame(width: 2000, height: 2000)
+        .onTapGesture {
+          print("[AI Modal] Background overlay clicked - dismissing")
+          dismissTask?.cancel()
+          fadeOutAndDismiss()
+        }
+      
+      // Modal content
       Text(response)
         .font(.system(size: 14))
         .foregroundColor(.black)
@@ -32,54 +45,77 @@ struct AIResponseModal: View {
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(minWidth: 200, idealWidth: 300, maxWidth: 500, alignment: .leading)
-      
-      HStack {
-        Spacer()
-        Button("Dismiss") {
-          dismissTask?.cancel()
-          onDismiss()
+        .padding(20)
+        .background(
+          ZStack {
+            // Glass effect with blur
+            RoundedRectangle(cornerRadius: 12)
+              .fill(.ultraThinMaterial)
+            
+            // Subtle white overlay for better text readability
+            RoundedRectangle(cornerRadius: 12)
+              .fill(Color.white.opacity(0.3))
+          }
+          .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
+        )
+        .fixedSize(horizontal: true, vertical: true)
+        .opacity(opacity)
+        .onHover { hovering in
+          isHovered = hovering
+          if hovering {
+            dismissTask?.cancel()
+            dismissTask = nil
+            opacity = 1.0
+          }
+          // Don't restart timer when hover ends - stay permanent once hovered
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
-      }
-    }
-    .padding(20)
-    .background(
-      RoundedRectangle(cornerRadius: 12)
-        .fill(Color.white.opacity(0.95))
-        .shadow(radius: 10)
-    )
-    .fixedSize(horizontal: true, vertical: true)
-    .onHover { hovering in
-      isHovered = hovering
-      if hovering {
-        dismissTask?.cancel()
-        dismissTask = nil
-      }
-    }
-    .onTapGesture {
-      // Prevent dismissal on modal click
-    }
-    .background(
-      Color.clear
-        .contentShape(Rectangle())
-        .frame(width: 2000, height: 2000)
         .onTapGesture {
-          dismissTask?.cancel()
-          onDismiss()
+          // Empty tap gesture to prevent click-through to background
+          print("[AI Modal] Modal content clicked - not dismissing")
         }
-    )
+    }
+    .focused($isFocused)
     .onAppear {
-      // Start auto-dismiss timer
-      dismissTask = Task {
-        try? await Task.sleep(for: .seconds(dismissDelay))
-        if !isHovered && !Task.isCancelled {
-          onDismiss()
-        }
-      }
+      print("[AI Modal] Modal appeared - starting timer, focusing for keyboard events")
+      isFocused = true
+      startDismissTimer()
     }
     .onDisappear {
       dismissTask?.cancel()
+    }
+    .onKeyPress(.escape) {
+      print("[AI Modal] Escape key pressed - dismissing")
+      dismissTask?.cancel()
+      fadeOutAndDismiss()
+      return .handled
+    }
+  }
+  
+  private func startDismissTimer() {
+    dismissTask = Task {
+      do {
+        // Wait for reading time
+        try await Task.sleep(for: .seconds(dismissDelay))
+        
+        // Check if still valid to dismiss
+        if !isHovered && !Task.isCancelled {
+          await fadeOutAndDismiss()
+        }
+      } catch {
+        // Task was cancelled
+      }
+    }
+  }
+  
+  private func fadeOutAndDismiss() {
+    Task { @MainActor in
+      withAnimation(.easeOut(duration: 0.3)) {
+        opacity = 0
+      }
+      try? await Task.sleep(for: .milliseconds(300))
+      if !Task.isCancelled {
+        onDismiss()
+      }
     }
   }
 }
@@ -239,15 +275,15 @@ struct TranscriptionIndicatorView: View {
         .zIndex(2)
       }
       
-      // Show AI response modal
+    }
+    .overlay(alignment: .center) {
+      // Show AI response modal as overlay (appears at same position as indicator)
       if status == .aiResponse, let response = aiResponse {
         AIResponseModal(
           response: response,
           onDismiss: onDismissAI
         )
-        .offset(y: 40)
         .transition(.opacity.combined(with: .scale(scale: 0.95)))
-        .zIndex(3)
       }
     }
     .enableInjection()

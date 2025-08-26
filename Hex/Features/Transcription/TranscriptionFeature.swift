@@ -201,7 +201,7 @@ private extension TranscriptionFeature {
           isAIKeyHeld = true
           // Immediately update AI mode visually
           Task { await send(.setAIMode(true)) }
-          return false // Don't intercept the 'a' key
+          return true // Intercept the 'a' key to prevent system beep
         }
 
         // Always keep hotKeyProcessor in sync with current user hotkey preference
