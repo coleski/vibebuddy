@@ -20,6 +20,9 @@ struct DynamicTextView: View {
     var text: String
     var onDismiss: () -> Void
     
+    @State private var isScrolling = false
+    @State private var hideScrollbarTask: Task<Void, Never>?
+    
     var body: some View {
         let nsFont = NSFont.systemFont(ofSize: 14)
         let font = Font.system(size: 14) // Matching SwiftUI font
@@ -29,6 +32,7 @@ struct DynamicTextView: View {
         
         let contentHeight = computeHeight(at: preferredWidth - 40, for: text, with: nsFont)
         let preferredHeight = min(contentHeight + 40, 600.0) // Add padding and cap at 600
+        let isScrollable = preferredHeight >= 600
         
         ZStack(alignment: .topTrailing) {
             ScrollView(.vertical, showsIndicators: false) { // Hide native scrollbar
@@ -39,6 +43,28 @@ struct DynamicTextView: View {
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(20)
+                    .background(GeometryReader { geo in
+                        Color.clear.onChange(of: geo.frame(in: .global).minY) { _ in
+                            if isScrollable {
+                                withAnimation(.easeOut(duration: 0.1)) {
+                                    isScrolling = true
+                                }
+                                
+                                // Cancel previous hide task
+                                hideScrollbarTask?.cancel()
+                                
+                                // Hide after 1 second of no scrolling
+                                hideScrollbarTask = Task {
+                                    try? await Task.sleep(for: .seconds(1))
+                                    if !Task.isCancelled {
+                                        withAnimation(.easeOut(duration: 0.3)) {
+                                            isScrolling = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    })
             }
             .frame(width: preferredWidth, height: preferredHeight)
             .background(
@@ -54,38 +80,27 @@ struct DynamicTextView: View {
                 .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
             )
             .overlay(alignment: .trailing) {
-                // iOS-style overlay scrollbar (only show if scrollable)
-                if preferredHeight >= 600 {
+                // iOS-style overlay scrollbar (only show if scrollable and scrolling)
+                if isScrollable {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.black.opacity(0.2))
-                        .frame(width: 3, height: 50) // Thumb size
+                        .fill(Color.white.opacity(isScrolling ? 0.5 : 0))
+                        .frame(width: 3, height: 60) // Thumb size
                         .padding(.trailing, 4)
                         .padding(.vertical, 8)
                         .allowsHitTesting(false) // Don't interfere with scrolling
                 }
             }
             
-            // Floating X button with glass effect
+            // Floating X button - white X on clear background
             Button(action: onDismiss) {
-                ZStack {
-                    // White glass circle background
-                    Circle()
-                        .fill(.thinMaterial)
-                        .overlay(
-                            Circle()
-                                .fill(Color.white.opacity(0.4))
-                        )
-                    
-                    // X with clear/transparent effect
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.tertiary) // This creates a subtle, translucent appearance
-                }
-                .frame(width: 15, height: 15)
-                .shadow(color: .black.opacity(0.08), radius: 1, x: 0, y: 1)
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle()) // Make entire frame clickable
             }
             .buttonStyle(.plain)
-            .padding(8)
+            .padding(4) // Much closer to corner
         }
     }
     
