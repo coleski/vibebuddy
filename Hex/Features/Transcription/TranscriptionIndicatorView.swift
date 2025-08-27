@@ -8,121 +8,16 @@ import Inject
 import Pow
 import SwiftUI
 
-struct AIResponseModal: View {
+// Legacy SwiftUI modal - kept for reference
+struct AIResponseModalLegacy: View {
   let response: String
   let onDismiss: () -> Void
   
-  @State private var isHovered = false
-  @State private var dismissTask: Task<Void, Never>?
-  @State private var opacity: Double = 1.0
-  
-  // Calculate dismiss delay based on text length (min 4 seconds, max 8 seconds)
-  var dismissDelay: TimeInterval {
-    let wordsPerMinute = 250.0
-    let words = Double(response.split(separator: " ").count)
-    let readingTime = (words / wordsPerMinute) * 60
-    return min(max(readingTime + 3, 4), 8)
-  }
-  
   var body: some View {
-    Group {
-      if response.count < 500 {
-        // For short text, no scroll needed
-        Text(response)
-          .font(.system(size: 14))
-          .foregroundColor(.black)
-          .lineSpacing(4)
-          .multilineTextAlignment(.leading)
-          .padding(20)
-          .frame(maxWidth: 400, alignment: .leading)
-          .fixedSize(horizontal: false, vertical: true)
-      } else {
-        // For long text, use ScrollView
-        ScrollView(.vertical, showsIndicators: true) {
-          Text(response)
-            .font(.system(size: 14))
-            .foregroundColor(.black)
-            .lineSpacing(4)
-            .multilineTextAlignment(.leading)
-            .padding(20)
-            .frame(maxWidth: 400, alignment: .leading)
-        }
-        .frame(maxHeight: 600)
-      }
-    }
-    .overlay(alignment: .topTrailing) {
-      // Floating X button with white circle background - overlapping padding
-      Button(action: {
-        dismissTask?.cancel()
-        fadeOutAndDismiss()
-      }) {
-        Image(systemName: "xmark")
-          .font(.system(size: 8, weight: .bold))
-          .foregroundColor(.black)
-          .frame(width: 14, height: 14)
-          .background(Circle().fill(Color.white.opacity(0.95)))
-          .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
-      }
-      .buttonStyle(.plain)
-      .padding(6) // Very close to edge, overlapping text padding
-    }
-    .background(
-      ZStack {
-        // Glass effect with blur
-        RoundedRectangle(cornerRadius: 12)
-          .fill(.ultraThinMaterial)
-        
-        // Subtle white overlay for better text readability
-        RoundedRectangle(cornerRadius: 12)
-          .fill(Color.white.opacity(0.3))
-      }
-      .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
-    )
-    .opacity(opacity)
-        .onHover { hovering in
-          isHovered = hovering
-          if hovering {
-            dismissTask?.cancel()
-            dismissTask = nil
-            opacity = 1.0
-          }
-          // Don't restart timer when hover ends - stay permanent once hovered
-        }
-    .onAppear {
-      print("[AI Modal] Modal appeared - starting timer")
-      startDismissTimer()
-    }
-    .onDisappear {
-      dismissTask?.cancel()
-    }
-  }
-  
-  private func startDismissTimer() {
-    dismissTask = Task {
-      do {
-        // Wait for reading time
-        try await Task.sleep(for: .seconds(dismissDelay))
-        
-        // Check if still valid to dismiss
-        if !isHovered && !Task.isCancelled {
-          await fadeOutAndDismiss()
-        }
-      } catch {
-        // Task was cancelled
-      }
-    }
-  }
-  
-  private func fadeOutAndDismiss() {
-    Task { @MainActor in
-      withAnimation(.easeOut(duration: 0.3)) {
-        opacity = 0
-      }
-      try? await Task.sleep(for: .milliseconds(300))
-      if !Task.isCancelled {
-        onDismiss()
-      }
-    }
+    Text("Loading...")
+      .padding()
+      .background(Color.white.opacity(0.9))
+      .cornerRadius(12)
   }
 }
 
@@ -285,7 +180,7 @@ struct TranscriptionIndicatorView: View {
     .overlay(alignment: .top) {
       // Show AI response modal as overlay (aligns top edge with indicator)
       if status == .aiResponse, let response = aiResponse {
-        AIResponseModal(
+        AIResponseModalUIKit(
           response: response,
           onDismiss: onDismissAI
         )
