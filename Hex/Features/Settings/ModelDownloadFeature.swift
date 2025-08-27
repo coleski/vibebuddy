@@ -489,7 +489,7 @@ private struct CuratedRow: View {
 							: Color.gray.opacity(0.2)
 					)
 			)
-			.contentShape(.rect)
+			.contentShape(Rectangle())
 		}
 		.buttonStyle(.plain)
 	}
