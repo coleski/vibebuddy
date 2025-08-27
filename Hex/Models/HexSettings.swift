@@ -20,8 +20,9 @@ struct HexSettings: Codable, Equatable {
 	var selectedMicrophoneID: String? = nil
 	var saveTranscriptionHistory: Bool = true
 	var maxHistoryEntries: Int? = nil
-	var aiKey: Key = .a
 	var selectedOllamaModel: String = "llama3.2:1b"
+	var aiModifierKey: Key = .a // Key to press during recording to trigger AI mode
+	var aiResponseReadingSpeed: Double = 250.0 // Words per minute, 0 = never dismiss
 
 	// Define coding keys to match struct properties
 	enum CodingKeys: String, CodingKey {
@@ -40,8 +41,9 @@ struct HexSettings: Codable, Equatable {
 		case selectedMicrophoneID
 		case saveTranscriptionHistory
 		case maxHistoryEntries
-		case aiKey
 		case selectedOllamaModel
+		case aiModifierKey
+		case aiResponseReadingSpeed
 	}
 
 	init(
@@ -60,8 +62,9 @@ struct HexSettings: Codable, Equatable {
 		selectedMicrophoneID: String? = nil,
 		saveTranscriptionHistory: Bool = true,
 		maxHistoryEntries: Int? = nil,
-		aiKey: Key = .a,
-		selectedOllamaModel: String = "llama3.2:1b"
+		selectedOllamaModel: String = "llama3.2:1b",
+		aiModifierKey: Key = .a,
+		aiResponseReadingSpeed: Double = 250.0
 	) {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.hotkey = hotkey
@@ -78,8 +81,9 @@ struct HexSettings: Codable, Equatable {
 		self.selectedMicrophoneID = selectedMicrophoneID
 		self.saveTranscriptionHistory = saveTranscriptionHistory
 		self.maxHistoryEntries = maxHistoryEntries
-		self.aiKey = aiKey
 		self.selectedOllamaModel = selectedOllamaModel
+		self.aiModifierKey = aiModifierKey
+		self.aiResponseReadingSpeed = aiResponseReadingSpeed
 	}
 
 	// Custom decoder that handles missing fields
@@ -113,10 +117,12 @@ struct HexSettings: Codable, Equatable {
 		saveTranscriptionHistory =
 			try container.decodeIfPresent(Bool.self, forKey: .saveTranscriptionHistory) ?? true
 		maxHistoryEntries = try container.decodeIfPresent(Int.self, forKey: .maxHistoryEntries)
-		aiKey =
-			try container.decodeIfPresent(Key.self, forKey: .aiKey) ?? .a
 		selectedOllamaModel =
 			try container.decodeIfPresent(String.self, forKey: .selectedOllamaModel) ?? "llama3.2:1b"
+		aiModifierKey =
+			try container.decodeIfPresent(Key.self, forKey: .aiModifierKey) ?? .a
+		aiResponseReadingSpeed =
+			try container.decodeIfPresent(Double.self, forKey: .aiResponseReadingSpeed) ?? 250.0
 	}
 }
 

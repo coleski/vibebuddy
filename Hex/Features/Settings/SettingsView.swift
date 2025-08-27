@@ -342,24 +342,24 @@ struct SettingsView: View {
 				} icon: {
 					Image(systemName: "timer")
 				}
-				
-				// Ollama Model
-				Label {
-					HStack {
-						Text("Ollama Model")
-						Spacer()
-						Text(store.hexSettings.selectedOllamaModel)
-							.foregroundColor(.secondary)
-					}
-				} icon: {
-					Image(systemName: "cpu")
-				}
 			} header: {
 				Text("AI Assistant")
 			} footer: {
 				Text("Hold the AI modifier key while recording to send transcription to Ollama for processing. The response will auto-dismiss based on reading speed.")
 					.font(.footnote)
 					.foregroundColor(.secondary)
+			}
+			
+			// --- AI Models Section ---
+			Section {
+				OllamaModelView(
+					store: store.scope(
+						state: \.ollamaModel,
+						action: \.ollamaModel
+					)
+				)
+			} header: {
+				Text("AI Models")
 			}
 		}
 		.formStyle(GroupedFormStyle())

@@ -1,0 +1,46 @@
+[
+    {
+        "name": "qwen2.5:0.5b",
+        "displayName": "Qwen 2.5 0.5B",
+        "parameterCount": "0.5B",
+        "context": "32k",
+        "speedStars": 5,
+        "capabilityStars": 1,
+        "minRAM": 2,
+        "storageSize": "395MB",
+        "isRecommended": true
+    },
+    {
+        "name": "llama3.2:1b",
+        "displayName": "Llama 3.2 1B",
+        "parameterCount": "1B",
+        "context": "128k",
+        "speedStars": 4,
+        "capabilityStars": 2,
+        "minRAM": 4,
+        "storageSize": "1.3GB",
+        "isRecommended": false
+    },
+    {
+        "name": "qwen2.5:7b",
+        "displayName": "Qwen 2.5 7B",
+        "parameterCount": "7B",
+        "context": "32k",
+        "speedStars": 3,
+        "capabilityStars": 4,
+        "minRAM": 16,
+        "storageSize": "4.7GB",
+        "isRecommended": false
+    },
+    {
+        "name": "gpt-oss:20b",
+        "displayName": "GPT:OSS 20B",
+        "parameterCount": "20B",
+        "context": "128k",
+        "speedStars": 2,
+        "capabilityStars": 5,
+        "minRAM": 16,
+        "storageSize": "12GB",
+        "isRecommended": false
+    }
+]

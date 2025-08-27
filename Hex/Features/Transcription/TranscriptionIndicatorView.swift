@@ -8,19 +8,6 @@ import Inject
 import Pow
 import SwiftUI
 
-// Legacy SwiftUI modal - kept for reference
-struct AIResponseModalLegacy: View {
-  let response: String
-  let onDismiss: () -> Void
-  
-  var body: some View {
-    Text("Loading...")
-      .padding()
-      .background(Color.white.opacity(0.9))
-      .cornerRadius(12)
-  }
-}
-
 struct TranscriptionIndicatorView: View {
   @ObserveInjection var inject
   
@@ -184,7 +171,7 @@ struct TranscriptionIndicatorView: View {
           response: response,
           onDismiss: onDismissAI
         )
-        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+        .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
       }
     }
     .enableInjection()

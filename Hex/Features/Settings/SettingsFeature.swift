@@ -41,6 +41,7 @@ struct SettingsFeature {
 
     // Model Management
     var modelDownload = ModelDownloadFeature.State()
+    var ollamaModel = OllamaModelFeature.State()
   }
 
   enum Action: BindableAction {
@@ -67,6 +68,7 @@ struct SettingsFeature {
 
     // Model Management
     case modelDownload(ModelDownloadFeature.Action)
+    case ollamaModel(OllamaModelFeature.Action)
     
     // History Management
     case toggleSaveTranscriptionHistory(Bool)
@@ -82,6 +84,10 @@ struct SettingsFeature {
 
     Scope(state: \.modelDownload, action: \.modelDownload) {
       ModelDownloadFeature()
+    }
+    
+    Scope(state: \.ollamaModel, action: \.ollamaModel) {
+      OllamaModelFeature()
     }
 
     Reduce { state, action in
@@ -107,6 +113,7 @@ struct SettingsFeature {
         return .run { send in
           await send(.checkPermissions)
           await send(.modelDownload(.fetchModels))
+          await send(.ollamaModel(.checkOllamaStatus))
           await send(.loadAvailableInputDevices)
           
           // Set up periodic refresh of available devices (every 120 seconds)
@@ -345,6 +352,9 @@ struct SettingsFeature {
           }
         }
         
+        return .none
+        
+      case .ollamaModel:
         return .none
       }
     }

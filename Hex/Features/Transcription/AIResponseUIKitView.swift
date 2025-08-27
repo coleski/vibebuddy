@@ -6,13 +6,12 @@
 //
 
 import SwiftUI
-import AppKit // For NSFont, to compute sizes accurately
 
-// PreferenceKey for tracking scroll position
-struct ScrollOffsetPreferenceKey: PreferenceKey {
+// PreferenceKey for tracking content height
+struct ContentHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+        value = max(value, nextValue())
     }
 }
 
@@ -22,51 +21,56 @@ struct DynamicTextView: View {
     
     @State private var isScrolling = false
     @State private var hideScrollbarTask: Task<Void, Never>?
+    @State private var scrollOffset: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    @State private var containerHeight: CGFloat = 0
+    @State private var actualContentHeight: CGFloat = 0
     
     var body: some View {
-        let nsFont = NSFont.systemFont(ofSize: 14)
-        let font = Font.system(size: 14) // Matching SwiftUI font
-        
-        let maxLineWidth = computeMaxLineWidth(for: text, with: nsFont)
-        let preferredWidth = min(maxLineWidth + 40, 400.0) // Add padding
-        
-        let contentHeight = computeHeight(at: preferredWidth - 40, for: text, with: nsFont)
-        let preferredHeight = min(contentHeight + 40, 600.0) // Add padding and cap at 600
-        let isScrollable = preferredHeight >= 600
+        let font = Font.system(size: 14)
+        let maxWidth: CGFloat = 400
+        let maxHeight: CGFloat = 600
         
         ZStack(alignment: .topTrailing) {
-            ScrollView(.vertical, showsIndicators: false) { // Hide native scrollbar
-                Text(text)
-                    .font(font)
-                    .foregroundColor(.black)
-                    .lineSpacing(4)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
-                    .background(GeometryReader { geo in
-                        Color.clear.onChange(of: geo.frame(in: .global).minY) { _ in
-                            if isScrollable {
-                                withAnimation(.easeOut(duration: 0.1)) {
-                                    isScrolling = true
-                                }
-                                
-                                // Cancel previous hide task
-                                hideScrollbarTask?.cancel()
-                                
-                                // Hide after 1 second of no scrolling
-                                hideScrollbarTask = Task {
-                                    try? await Task.sleep(for: .seconds(1))
-                                    if !Task.isCancelled {
-                                        withAnimation(.easeOut(duration: 0.3)) {
-                                            isScrolling = false
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    Text(text)
+                        .font(font)
+                        .foregroundColor(.black)
+                        .lineSpacing(4)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true) // Let text size itself naturally
+                        .frame(maxWidth: maxWidth - 40, alignment: .leading)
+                        .background(GeometryReader { geo in
+                            Color.clear
+                                .preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
+                                .onChange(of: geo.frame(in: .named("scroll")).minY) { newValue in
+                                    let needsScroll = actualContentHeight > maxHeight - 40
+                                    if needsScroll {
+                                        scrollOffset = -newValue
+                                        
+                                        withAnimation(.easeOut(duration: 0.1)) {
+                                            isScrolling = true
+                                        }
+                                        
+                                        hideScrollbarTask?.cancel()
+                                        hideScrollbarTask = Task {
+                                            try? await Task.sleep(for: .seconds(1))
+                                            if !Task.isCancelled {
+                                                withAnimation(.easeOut(duration: 0.3)) {
+                                                    isScrolling = false
+                                                }
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        }
-                    })
+                        })
+                }
+                .disabled(actualContentHeight <= maxHeight - 40) // Disable scroll when not needed
             }
-            .frame(width: preferredWidth, height: preferredHeight)
+            .coordinateSpace(name: "scroll")
+            .padding(20)
+            .frame(width: maxWidth, height: min(actualContentHeight + 40, maxHeight))
             .background(
                 ZStack {
                     // Glass effect with blur
@@ -79,14 +83,27 @@ struct DynamicTextView: View {
                 }
                 .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
             )
-            .overlay(alignment: .trailing) {
+            .onPreferenceChange(ContentHeightPreferenceKey.self) { value in
+                actualContentHeight = value
+                containerHeight = min(value + 40, maxHeight)
+            }
+            .overlay(alignment: .topTrailing) {
                 // iOS-style overlay scrollbar (only show if scrollable and scrolling)
-                if isScrollable {
+                let needsScroll = actualContentHeight > maxHeight - 40
+                if needsScroll {
+                    let scrollableHeight = max(0, actualContentHeight - (maxHeight - 40))
+                    let scrollProgress = scrollableHeight > 0 ? min(1, max(0, scrollOffset / scrollableHeight)) : 0
+                    let thumbHeight: CGFloat = 60
+                    let trackHeight = maxHeight - 40 - 16 // Track height within content area
+                    let availableSpace = trackHeight - thumbHeight
+                    let thumbOffset = availableSpace * scrollProgress
+                    
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Color.white.opacity(isScrolling ? 0.5 : 0))
-                        .frame(width: 3, height: 60) // Thumb size
-                        .padding(.trailing, 4)
-                        .padding(.vertical, 8)
+                        .frame(width: 3, height: thumbHeight)
+                        .offset(y: thumbOffset)
+                        .padding(.trailing, 24) // Adjust for window padding
+                        .padding(.vertical, 28) // Adjust for window padding
                         .allowsHitTesting(false) // Don't interfere with scrolling
                 }
             }
@@ -102,34 +119,6 @@ struct DynamicTextView: View {
             .buttonStyle(.plain)
             .padding(4) // Much closer to corner
         }
-    }
-    
-    private func computeMaxLineWidth(for text: String, with font: NSFont) -> CGFloat {
-        guard !text.isEmpty else { return 100 }
-        
-        let lines = text.components(separatedBy: .newlines)
-        var maxWidth: CGFloat = 0
-        
-        for line in lines {
-            let lineSize = (line as NSString).size(withAttributes: [.font: font])
-            maxWidth = max(maxWidth, lineSize.width)
-        }
-        
-        return ceil(maxWidth)
-    }
-    
-    private func computeHeight(at width: CGFloat, for text: String, with font: NSFont) -> CGFloat {
-        guard !text.isEmpty, width > 0 else { return 50 }
-        
-        let constraintRect = CGSize(width: width, height: .greatestFiniteMagnitude)
-        let boundingBox = (text as NSString).boundingRect(
-            with: constraintRect,
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font],
-            context: nil
-        )
-        
-        return ceil(boundingBox.height)
     }
 }
 

@@ -151,7 +151,6 @@ struct TranscriptionFeature {
           return .none
         }
         return handleCancel(&state)
-        
       }
     }
   }
@@ -180,7 +179,7 @@ private extension TranscriptionFeature {
       // Track if AI key is held during recording
       var isAIKeyHeld = false
       var isCurrentlyRecording = false
-
+      
       // Handle incoming key events
       keyEventMonitor.handleKeyEvent { keyEvent in
         // Skip if the user is currently setting a hotkey
@@ -196,12 +195,12 @@ private extension TranscriptionFeature {
           return false
         }
         
-        // Only track AI key ('a') when we're recording
-        if isCurrentlyRecording && keyEvent.key == hexSettings.aiKey {
+        // Track AI modifier key when we're recording
+        if isCurrentlyRecording && keyEvent.key == hexSettings.aiModifierKey {
           isAIKeyHeld = true
           // Immediately update AI mode visually
           Task { await send(.setAIMode(true)) }
-          return true // Intercept the 'a' key to prevent system beep
+          return true // Intercept the AI key to prevent system beep
         }
 
         // Always keep hotKeyProcessor in sync with current user hotkey preference
@@ -213,15 +212,12 @@ private extension TranscriptionFeature {
         case .startRecording:
           isCurrentlyRecording = true
           isAIKeyHeld = false // Reset AI mode flag
+          
           // If double-tap lock is triggered, we start recording immediately
           if hotKeyProcessor.state == .doubleTapLock {
             Task { await send(.startRecording) }
           } else {
-            // Start recording, will switch to AI if 'a' is pressed
-            Task { 
-              await send(.setAIMode(false))
-              await send(.hotKeyPressed(isAIMode: false)) 
-            }
+            Task { await send(.hotKeyPressed(isAIMode: false)) }
           }
           // If the hotkey is purely modifiers, return false to keep it from interfering with normal usage
           // But if useDoubleTapOnly is true, always intercept the key
@@ -229,8 +225,15 @@ private extension TranscriptionFeature {
 
         case .stopRecording:
           isCurrentlyRecording = false
+          let wasAIMode = isAIKeyHeld
           isAIKeyHeld = false
-          Task { await send(.hotKeyReleased) }
+          // Pass the AI mode state when releasing
+          Task { 
+            if wasAIMode {
+              await send(.setAIMode(true))
+            }
+            await send(.hotKeyReleased) 
+          }
           return false
 
         case .cancel:
