@@ -12,6 +12,10 @@ extension SharedReaderKey
   static var isSettingHotKey: Self {
     Self[.inMemory("isSettingHotKey"), default: false]
   }
+  
+  static var isSettingAIKey: Self {
+    Self[.inMemory("isSettingAIKey"), default: false]
+  }
 }
 
 // MARK: - Settings Feature
@@ -22,6 +26,7 @@ struct SettingsFeature {
   struct State {
     @Shared(.hexSettings) var hexSettings: HexSettings
     @Shared(.isSettingHotKey) var isSettingHotKey: Bool = false
+    @Shared(.isSettingAIKey) var isSettingAIKey: Bool = false
     @Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
 
     var languages: IdentifiedArrayOf<Language> = []
@@ -44,6 +49,7 @@ struct SettingsFeature {
     // Existing
     case task
     case startSettingHotKey
+    case startSettingAIKey
     case keyEvent(KeyEvent)
     case toggleOpenOnLogin(Bool)
     case togglePreventSystemSleep(Bool)
@@ -161,9 +167,33 @@ struct SettingsFeature {
 
       case .startSettingHotKey:
         state.$isSettingHotKey.withLock { $0 = true }
+        state.$isSettingAIKey.withLock { $0 = false }
+        return .none
+
+      case .startSettingAIKey:
+        state.$isSettingAIKey.withLock { $0 = true }
+        state.$isSettingHotKey.withLock { $0 = false }
         return .none
 
       case let .keyEvent(keyEvent):
+        // Handle setting AI modifier key
+        if state.isSettingAIKey {
+          if keyEvent.key == .escape {
+            state.$isSettingAIKey.withLock { $0 = false }
+            return .none
+          }
+          
+          // For AI key, we only want a single key, not modifiers
+          if let key = keyEvent.key {
+            state.$hexSettings.withLock {
+              $0.aiModifierKey = key
+            }
+            state.$isSettingAIKey.withLock { $0 = false }
+          }
+          return .none
+        }
+        
+        // Handle setting main hotkey
         guard state.isSettingHotKey else { return .none }
 
         if keyEvent.key == .escape {

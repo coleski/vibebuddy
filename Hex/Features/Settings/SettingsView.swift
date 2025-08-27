@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Inject
 import SwiftUI
+import Sauce
 
 struct SettingsView: View {
 	@ObserveInjection var inject
@@ -303,8 +304,65 @@ struct SettingsView: View {
 						.foregroundColor(.secondary)
 				}
 			}
+			
+			// --- AI Assistant Section ---
+			Section {
+				// AI Modifier Key (similar to Hot Key section)
+				VStack(spacing: 12) {
+					Text("AI Modifier (press with hotkey to trigger AI)")
+						.font(.caption)
+						.foregroundColor(.secondary)
+						.frame(maxWidth: .infinity, alignment: .center)
+					
+					// Hot key view for AI modifier
+					HStack {
+						Spacer()
+						HotKeyView(modifiers: [], key: store.isSettingAIKey ? nil : store.hexSettings.aiModifierKey, isActive: store.isSettingAIKey)
+							.animation(.spring(), value: store.hexSettings.aiModifierKey)
+							.animation(.spring(), value: store.isSettingAIKey)
+						Spacer()
+					}
+					.contentShape(Rectangle())
+					.onTapGesture {
+						store.send(.startSettingAIKey)
+					}
+				}
+				
+				// Reading Speed
+				Label {
+					VStack(alignment: .leading, spacing: 4) {
+						Slider(value: $store.hexSettings.aiResponseReadingSpeed, in: 0...1000, step: 50)
+							.onChange(of: store.hexSettings.aiResponseReadingSpeed) { newValue in
+								print("[SettingsView] WPM slider changed to: \(newValue)")
+							}
+						Text(store.hexSettings.aiResponseReadingSpeed == 0 ? "Never auto-dismiss" : "Auto-dismiss at \(Int(store.hexSettings.aiResponseReadingSpeed)) WPM")
+							.font(.caption)
+							.foregroundColor(.secondary)
+					}
+				} icon: {
+					Image(systemName: "timer")
+				}
+				
+				// Ollama Model
+				Label {
+					HStack {
+						Text("Ollama Model")
+						Spacer()
+						Text(store.hexSettings.selectedOllamaModel)
+							.foregroundColor(.secondary)
+					}
+				} icon: {
+					Image(systemName: "cpu")
+				}
+			} header: {
+				Text("AI Assistant")
+			} footer: {
+				Text("Hold the AI modifier key while recording to send transcription to Ollama for processing. The response will auto-dismiss based on reading speed.")
+					.font(.footnote)
+					.foregroundColor(.secondary)
+			}
 		}
-		.formStyle(.grouped)
+		.formStyle(GroupedFormStyle())
 		.task {
 			await store.send(.task).finish()
 		}
