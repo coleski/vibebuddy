@@ -4,6 +4,9 @@
     "" : {
       "shouldTranslate" : false
     },
+    "(Not downloaded)" : {
+
+    },
     "%lldGB RAM required" : {
 
     },

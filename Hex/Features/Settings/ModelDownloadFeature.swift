@@ -368,7 +368,11 @@ private struct AllModelsPicker: View {
 			"Selected Model",
 			selection: Binding(
 				get: { store.hexSettings.selectedModel },
-				set: { store.send(.selectModel($0)) }
+				set: { newValue in
+					if let model = store.availableModels[id: newValue], model.isDownloaded {
+						store.send(.selectModel(newValue))
+					}
+				}
 			)
 		) {
 			ForEach(store.availableModels) { info in
@@ -378,10 +382,11 @@ private struct AllModelsPicker: View {
 							? "\(info.name) (Recommended)"
 							: info.name
 					)
-					Spacer()
-					if info.isDownloaded {
-						Image(systemName: "checkmark.circle.fill")
-							.foregroundColor(.green)
+					.foregroundColor(info.isDownloaded ? .primary : .secondary)
+					if !info.isDownloaded {
+						Text("(Not downloaded)")
+							.font(.caption)
+							.foregroundColor(.secondary)
 					}
 				}
 				.tag(info.name)
@@ -433,42 +438,53 @@ private struct CuratedRow: View {
 
 	var body: some View {
 		Button(
-			action: { store.send(.selectModel(model.internalName)) }
+			action: { 
+				if model.isDownloaded {
+					store.send(.selectModel(model.internalName))
+				} else {
+					store.send(.selectModel(model.internalName))
+					store.send(.downloadSelectedModel)
+				}
+			}
 		) {
 			HStack {
 				HStack {
 					Text(model.displayName)
 						.font(.headline)
-					if model.isDownloaded {
-						Image(systemName: "checkmark.circle.fill")
-							.foregroundColor(.green)
-					}
-					if isSelected {
+						.foregroundColor(model.isDownloaded ? .primary : .secondary)
+					if isSelected && model.isDownloaded {
 						Image(systemName: "checkmark")
 							.foregroundColor(.blue)
+					} else if !model.isDownloaded {
+						Image(systemName: "arrow.down.circle")
+							.foregroundColor(.blue)
+							.font(.system(size: 13))
 					}
 				}
 				.frame(minWidth: 80, alignment: .leading)
 				Spacer()
 				StarRatingView(model.accuracyStars)
 					.frame(minWidth: 80, alignment: .leading)
+					.opacity(model.isDownloaded ? 1.0 : 0.5)
 				Spacer()
 				StarRatingView(model.speedStars)
 					.frame(minWidth: 80, alignment: .leading)
+					.opacity(model.isDownloaded ? 1.0 : 0.5)
 				Spacer()
 				Text(model.storageSize)
 					.foregroundColor(.secondary)
 					.frame(minWidth: 70, alignment: .leading)
+					.opacity(model.isDownloaded ? 1.0 : 0.6)
 			}
 			.padding(8)
 			.background(
 				RoundedRectangle(cornerRadius: 8)
-					.fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+					.fill(isSelected && model.isDownloaded ? Color.blue.opacity(0.1) : Color.clear)
 			)
 			.overlay(
 				RoundedRectangle(cornerRadius: 8)
 					.stroke(
-						isSelected
+						isSelected && model.isDownloaded
 							? Color.blue.opacity(0.3)
 							: Color.gray.opacity(0.2)
 					)

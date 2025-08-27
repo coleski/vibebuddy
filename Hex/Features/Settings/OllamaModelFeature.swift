@@ -662,25 +662,31 @@ private struct CuratedRow: View {
 	
 	var statusIcon: some View {
 		Group {
-			switch compatibility {
-			case .recommended:
-				if model.isRecommended {
-					Label("Recommended", systemImage: "star.fill")
-						.foregroundColor(.yellow)
+			if model.isDownloaded {
+				// Don't show any status for downloaded models
+				EmptyView()
+			} else {
+				// Show compatibility status for undownloaded models
+				switch compatibility {
+				case .recommended:
+					if model.isRecommended {
+						Label("Recommended", systemImage: "star.fill")
+							.foregroundColor(.yellow)
+							.font(.caption)
+					} else {
+						Label("Compatible", systemImage: "checkmark.circle")
+							.foregroundColor(.green)
+							.font(.caption)
+					}
+				case .compatible:
+					Label("May be slow", systemImage: "exclamationmark.triangle")
+						.foregroundColor(.orange)
 						.font(.caption)
-				} else {
-					Label("Compatible", systemImage: "checkmark.circle")
-						.foregroundColor(.green)
+				case .incompatible:
+					Label("\(model.minRAM)GB RAM required", systemImage: "xmark.circle")
+						.foregroundColor(.red)
 						.font(.caption)
 				}
-			case .compatible:
-				Label("May be slow", systemImage: "exclamationmark.triangle")
-					.foregroundColor(.orange)
-					.font(.caption)
-			case .incompatible:
-				Label("\(model.minRAM)GB RAM required", systemImage: "xmark.circle")
-					.foregroundColor(.red)
-					.font(.caption)
 			}
 		}
 	}
@@ -690,6 +696,8 @@ private struct CuratedRow: View {
 			action: { 
 				if model.isDownloaded {
 					store.send(.selectModel(model.name))
+				} else if compatibility != .incompatible {
+					store.send(.pullModel(model.name))
 				}
 			}
 		) {
@@ -697,13 +705,14 @@ private struct CuratedRow: View {
 				HStack {
 					Text(model.displayName)
 						.font(.headline)
-					if model.isDownloaded {
-						Image(systemName: "checkmark.circle.fill")
-							.foregroundColor(.green)
-					}
-					if isSelected {
+						.foregroundColor(model.isDownloaded ? .primary : .secondary)
+					if isSelected && model.isDownloaded {
 						Image(systemName: "checkmark")
 							.foregroundColor(.blue)
+					} else if !model.isDownloaded && compatibility != .incompatible {
+						Image(systemName: "arrow.down.circle")
+							.foregroundColor(.blue)
+							.font(.system(size: 13))
 					}
 				}
 				.frame(minWidth: 100, alignment: .leading)
@@ -711,15 +720,18 @@ private struct CuratedRow: View {
 				Spacer()
 				StarRatingView(model.speedStars)
 					.frame(minWidth: 60, alignment: .leading)
+					.opacity(model.isDownloaded ? 1.0 : 0.5)
 				
 				Spacer()
 				StarRatingView(model.capabilityStars)
 					.frame(minWidth: 60, alignment: .leading)
+					.opacity(model.isDownloaded ? 1.0 : 0.5)
 				
 				Spacer()
 				Text(model.storageSize)
 					.foregroundColor(.secondary)
 					.frame(minWidth: 60, alignment: .leading)
+					.opacity(model.isDownloaded ? 1.0 : 0.6)
 				
 				statusIcon
 					.frame(minWidth: 80, alignment: .leading)
@@ -727,12 +739,12 @@ private struct CuratedRow: View {
 			.padding(8)
 			.background(
 				RoundedRectangle(cornerRadius: 8)
-					.fill(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+					.fill(isSelected && model.isDownloaded ? Color.blue.opacity(0.1) : Color.clear)
 			)
 			.overlay(
 				RoundedRectangle(cornerRadius: 8)
 					.stroke(
-						isSelected
+						isSelected && model.isDownloaded
 							? Color.blue.opacity(0.3)
 							: Color.gray.opacity(0.2)
 					)
@@ -757,19 +769,22 @@ private struct ModelRow: View {
 			Button(action: {
 				if model.isDownloaded {
 					store.send(.selectModel(model.name))
+				} else {
+					store.send(.pullModel(model.name))
 				}
 			}) {
 				HStack {
 					Text(model.displayName)
-					if model.isDownloaded {
-						Image(systemName: "checkmark.circle.fill")
-							.foregroundColor(.green)
-					}
-					if isSelected {
+						.foregroundColor(model.isDownloaded ? .primary : .secondary)
+					if isSelected && model.isDownloaded {
 						Image(systemName: "checkmark")
 							.foregroundColor(.blue)
+					} else if !model.isDownloaded {
+						Image(systemName: "arrow.down.circle")
+							.foregroundColor(.blue)
+							.font(.system(size: 13))
 					}
-					if model.isRecommended {
+					if model.isRecommended && !model.isDownloaded {
 						Text("Recommended")
 							.font(.caption)
 							.foregroundColor(.secondary)
@@ -777,18 +792,12 @@ private struct ModelRow: View {
 					Spacer()
 					Text(model.storageSize)
 						.foregroundColor(.secondary)
+						.opacity(model.isDownloaded ? 1.0 : 0.6)
 				}
 			}
 			.buttonStyle(.plain)
-			.disabled(!model.isDownloaded)
 			
-			if !model.isDownloaded {
-				Button("Download") {
-					store.send(.pullModel(model.name))
-				}
-				.buttonStyle(.borderless)
-				.font(.caption)
-			} else if !isSelected {
+			if model.isDownloaded && !isSelected {
 				Button("Delete", role: .destructive) {
 					store.send(.deleteModel(model.name))
 				}
