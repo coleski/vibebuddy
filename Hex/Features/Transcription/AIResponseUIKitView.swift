@@ -8,6 +8,14 @@
 import SwiftUI
 import AppKit // For NSFont, to compute sizes accurately
 
+// PreferenceKey for tracking scroll position
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct DynamicTextView: View {
     var text: String
     var onDismiss: () -> Void
@@ -23,7 +31,7 @@ struct DynamicTextView: View {
         let preferredHeight = min(contentHeight + 40, 600.0) // Add padding and cap at 600
         
         ZStack(alignment: .topTrailing) {
-            ScrollView(.vertical, showsIndicators: true) {
+            ScrollView(.vertical, showsIndicators: false) { // Hide native scrollbar
                 Text(text)
                     .font(font)
                     .foregroundColor(.black)
@@ -45,18 +53,39 @@ struct DynamicTextView: View {
                 }
                 .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
             )
+            .overlay(alignment: .trailing) {
+                // iOS-style overlay scrollbar (only show if scrollable)
+                if preferredHeight >= 600 {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.black.opacity(0.2))
+                        .frame(width: 3, height: 50) // Thumb size
+                        .padding(.trailing, 4)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false) // Don't interfere with scrolling
+                }
+            }
             
-            // Floating X button with white circle background
+            // Floating X button with glass effect
             Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(.black)
-                    .frame(width: 14, height: 14)
-                    .background(Circle().fill(Color.white.opacity(0.95)))
-                    .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 1)
+                ZStack {
+                    // White glass circle background
+                    Circle()
+                        .fill(.thinMaterial)
+                        .overlay(
+                            Circle()
+                                .fill(Color.white.opacity(0.4))
+                        )
+                    
+                    // X with clear/transparent effect
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.tertiary) // This creates a subtle, translucent appearance
+                }
+                .frame(width: 15, height: 15)
+                .shadow(color: .black.opacity(0.08), radius: 1, x: 0, y: 1)
             }
             .buttonStyle(.plain)
-            .padding(6)
+            .padding(8)
         }
     }
     
