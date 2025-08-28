@@ -12,6 +12,10 @@ extension SharedReaderKey
   static var isSettingHotKey: Self {
     Self[.inMemory("isSettingHotKey"), default: false]
   }
+  
+  static var isSettingAIKey: Self {
+    Self[.inMemory("isSettingAIKey"), default: false]
+  }
 }
 
 // MARK: - Settings Feature
@@ -22,6 +26,7 @@ struct SettingsFeature {
   struct State {
     @Shared(.hexSettings) var hexSettings: HexSettings
     @Shared(.isSettingHotKey) var isSettingHotKey: Bool = false
+    @Shared(.isSettingAIKey) var isSettingAIKey: Bool = false
     @Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
 
     var languages: IdentifiedArrayOf<Language> = []
@@ -36,6 +41,7 @@ struct SettingsFeature {
 
     // Model Management
     var modelDownload = ModelDownloadFeature.State()
+    var ollamaModel = OllamaModelFeature.State()
   }
 
   enum Action: BindableAction {
@@ -44,6 +50,7 @@ struct SettingsFeature {
     // Existing
     case task
     case startSettingHotKey
+    case startSettingAIKey
     case keyEvent(KeyEvent)
     case toggleOpenOnLogin(Bool)
     case togglePreventSystemSleep(Bool)
@@ -61,6 +68,7 @@ struct SettingsFeature {
 
     // Model Management
     case modelDownload(ModelDownloadFeature.Action)
+    case ollamaModel(OllamaModelFeature.Action)
     
     // History Management
     case toggleSaveTranscriptionHistory(Bool)
@@ -76,6 +84,10 @@ struct SettingsFeature {
 
     Scope(state: \.modelDownload, action: \.modelDownload) {
       ModelDownloadFeature()
+    }
+    
+    Scope(state: \.ollamaModel, action: \.ollamaModel) {
+      OllamaModelFeature()
     }
 
     Reduce { state, action in
@@ -101,6 +113,7 @@ struct SettingsFeature {
         return .run { send in
           await send(.checkPermissions)
           await send(.modelDownload(.fetchModels))
+          await send(.ollamaModel(.checkOllamaStatus))
           await send(.loadAvailableInputDevices)
           
           // Set up periodic refresh of available devices (every 120 seconds)
@@ -161,9 +174,33 @@ struct SettingsFeature {
 
       case .startSettingHotKey:
         state.$isSettingHotKey.withLock { $0 = true }
+        state.$isSettingAIKey.withLock { $0 = false }
+        return .none
+
+      case .startSettingAIKey:
+        state.$isSettingAIKey.withLock { $0 = true }
+        state.$isSettingHotKey.withLock { $0 = false }
         return .none
 
       case let .keyEvent(keyEvent):
+        // Handle setting AI modifier key
+        if state.isSettingAIKey {
+          if keyEvent.key == .escape {
+            state.$isSettingAIKey.withLock { $0 = false }
+            return .none
+          }
+          
+          // For AI key, we only want a single key, not modifiers
+          if let key = keyEvent.key {
+            state.$hexSettings.withLock {
+              $0.aiModifierKey = key
+            }
+            state.$isSettingAIKey.withLock { $0 = false }
+          }
+          return .none
+        }
+        
+        // Handle setting main hotkey
         guard state.isSettingHotKey else { return .none }
 
         if keyEvent.key == .escape {
@@ -315,6 +352,9 @@ struct SettingsFeature {
           }
         }
         
+        return .none
+        
+      case .ollamaModel:
         return .none
       }
     }

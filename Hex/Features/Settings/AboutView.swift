@@ -51,3 +51,10 @@ struct AboutView: View {
         .enableInjection()
     }
 }
+
+#Preview {
+    AboutView(store: Store(initialState: SettingsFeature.State()) {
+        SettingsFeature()
+    })
+    .frame(width: 500, height: 300)
+}

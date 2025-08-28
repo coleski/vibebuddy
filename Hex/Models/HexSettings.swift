@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
+import Sauce
 
 // To add a new setting, add a new property to the struct, the CodingKeys enum, and the custom decoder
 struct HexSettings: Codable, Equatable {
@@ -19,6 +20,10 @@ struct HexSettings: Codable, Equatable {
 	var selectedMicrophoneID: String? = nil
 	var saveTranscriptionHistory: Bool = true
 	var maxHistoryEntries: Int? = nil
+	var selectedOllamaModel: String = "llama3.2:1b"
+	var aiModifierKey: Key = .a // Key to press during recording to trigger AI mode
+	var aiResponseReadingSpeed: Double = 250.0 // Words per minute, 0 = never dismiss
+	var ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
 
 	// Define coding keys to match struct properties
 	enum CodingKeys: String, CodingKey {
@@ -37,6 +42,10 @@ struct HexSettings: Codable, Equatable {
 		case selectedMicrophoneID
 		case saveTranscriptionHistory
 		case maxHistoryEntries
+		case selectedOllamaModel
+		case aiModifierKey
+		case aiResponseReadingSpeed
+		case ollamaSystemPrompt
 	}
 
 	init(
@@ -54,7 +63,11 @@ struct HexSettings: Codable, Equatable {
 		outputLanguage: String? = nil,
 		selectedMicrophoneID: String? = nil,
 		saveTranscriptionHistory: Bool = true,
-		maxHistoryEntries: Int? = nil
+		maxHistoryEntries: Int? = nil,
+		selectedOllamaModel: String = "llama3.2:1b",
+		aiModifierKey: Key = .a,
+		aiResponseReadingSpeed: Double = 250.0,
+		ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
 	) {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.hotkey = hotkey
@@ -71,6 +84,10 @@ struct HexSettings: Codable, Equatable {
 		self.selectedMicrophoneID = selectedMicrophoneID
 		self.saveTranscriptionHistory = saveTranscriptionHistory
 		self.maxHistoryEntries = maxHistoryEntries
+		self.selectedOllamaModel = selectedOllamaModel
+		self.aiModifierKey = aiModifierKey
+		self.aiResponseReadingSpeed = aiResponseReadingSpeed
+		self.ollamaSystemPrompt = ollamaSystemPrompt
 	}
 
 	// Custom decoder that handles missing fields
@@ -104,6 +121,15 @@ struct HexSettings: Codable, Equatable {
 		saveTranscriptionHistory =
 			try container.decodeIfPresent(Bool.self, forKey: .saveTranscriptionHistory) ?? true
 		maxHistoryEntries = try container.decodeIfPresent(Int.self, forKey: .maxHistoryEntries)
+		selectedOllamaModel =
+			try container.decodeIfPresent(String.self, forKey: .selectedOllamaModel) ?? "llama3.2:1b"
+		aiModifierKey =
+			try container.decodeIfPresent(Key.self, forKey: .aiModifierKey) ?? .a
+		aiResponseReadingSpeed =
+			try container.decodeIfPresent(Double.self, forKey: .aiResponseReadingSpeed) ?? 250.0
+		ollamaSystemPrompt =
+			try container.decodeIfPresent(String.self, forKey: .ollamaSystemPrompt) 
+				?? "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
 	}
 }
 

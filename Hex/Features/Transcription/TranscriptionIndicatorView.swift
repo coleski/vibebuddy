@@ -1,11 +1,11 @@
 //
-//  HexCapsuleView.swift
+//  TranscriptionIndicatorView.swift
 //  Hex
 //
-//  Created by Kit Langton on 1/25/25.
-
+//  Created by Kit Langton on 1/10/25.
+//
 import Inject
-import Pow
+import SwiftData
 import SwiftUI
 
 struct TranscriptionIndicatorView: View {
@@ -15,24 +15,33 @@ struct TranscriptionIndicatorView: View {
     case hidden
     case optionKeyPressed
     case recording
+    case aiRecording
     case transcribing
+    case aiTranscribing
     case prewarming
     case needsModel
+    case aiResponse
   }
 
   var status: Status
   var meter: Meter
+  var aiResponse: String?
+  var onDismissAI: () -> Void = {}
 
   let transcribeBaseColor: Color = .blue
+  let aiBaseColor: Color = .purple
 
   private var backgroundColor: Color {
     switch status {
     case .hidden: return Color.clear
     case .optionKeyPressed: return Color.black
     case .recording: return .red.mix(with: .black, by: 0.5).mix(with: .red, by: meter.averagePower * 3)
+    case .aiRecording: return aiBaseColor.mix(with: .black, by: 0.5).mix(with: aiBaseColor, by: meter.averagePower * 3)
     case .transcribing: return transcribeBaseColor.mix(with: .black, by: 0.5)
+    case .aiTranscribing: return aiBaseColor.mix(with: .black, by: 0.5)
     case .prewarming: return transcribeBaseColor.mix(with: .black, by: 0.5)
     case .needsModel: return Color.white
+    case .aiResponse: return Color.white.opacity(0.95)
     }
   }
 
@@ -41,9 +50,12 @@ struct TranscriptionIndicatorView: View {
     case .hidden: return Color.clear
     case .optionKeyPressed: return Color.black
     case .recording: return Color.red.mix(with: .white, by: 0.1).opacity(0.6)
+    case .aiRecording: return aiBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
     case .transcribing: return transcribeBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
+    case .aiTranscribing: return aiBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
     case .prewarming: return transcribeBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
     case .needsModel: return Color.gray.opacity(0.3)
+    case .aiResponse: return Color.gray.opacity(0.3)
     }
   }
 
@@ -52,9 +64,12 @@ struct TranscriptionIndicatorView: View {
     case .hidden: return Color.clear
     case .optionKeyPressed: return Color.clear
     case .recording: return Color.red
+    case .aiRecording: return aiBaseColor
     case .transcribing: return transcribeBaseColor
+    case .aiTranscribing: return aiBaseColor
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.gray.opacity(0.1)
+    case .aiResponse: return Color.gray.opacity(0.2)
     }
   }
 
@@ -99,14 +114,14 @@ struct TranscriptionIndicatorView: View {
           }
           .overlay(alignment: .center) {
             RoundedRectangle(cornerRadius: cornerRadius)
-              .fill(Color.red.opacity(status == .recording ? (averagePower < 0.1 ? averagePower / 0.1 : 1) : 0))
+              .fill((status == .recording ? Color.red : status == .aiRecording ? aiBaseColor : Color.clear).opacity((status == .recording || status == .aiRecording) ? (averagePower < 0.1 ? averagePower / 0.1 : 1) : 0))
               .blur(radius: 2)
               .blendMode(.screen)
               .padding(6)
           }
           .overlay(alignment: .center) {
             RoundedRectangle(cornerRadius: cornerRadius)
-              .fill(Color.white.opacity(status == .recording ? (averagePower < 0.1 ? averagePower / 0.1 : 0.5) : 0))
+              .fill(Color.white.opacity(status == .recording || status == .aiRecording ? (averagePower < 0.1 ? averagePower / 0.1 : 0.5) : 0))
               .blur(radius: 1)
               .blendMode(.screen)
               .frame(maxWidth: .infinity, alignment: .center)
@@ -115,7 +130,7 @@ struct TranscriptionIndicatorView: View {
           .overlay(alignment: .center) {
             GeometryReader { proxy in
               RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(Color.red.opacity(status == .recording ? (peakPower < 0.1 ? (peakPower / 0.1) * 0.5 : 0.5) : 0))
+                .fill(Color.red.opacity(status == .recording || status == .aiRecording ? (peakPower < 0.1 ? (peakPower / 0.1) * 0.5 : 0.5) : 0))
                 .frame(width: max(proxy.size.width * (peakPower + 0.6), 0), height: proxy.size.height, alignment: .center)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .blur(radius: 4)
@@ -124,27 +139,29 @@ struct TranscriptionIndicatorView: View {
           }
           .cornerRadius(cornerRadius)
           .shadow(
-            color: status == .recording ? .red.opacity(averagePower) : .red.opacity(0),
+            color: status == .recording ? .red.opacity(averagePower) : 
+                   status == .aiRecording ? aiBaseColor.opacity(averagePower) : .red.opacity(0),
             radius: 4
           )
           .shadow(
-            color: status == .recording ? .red.opacity(averagePower * 0.5) : .red.opacity(0),
+            color: status == .recording ? .red.opacity(averagePower * 0.5) : 
+                   status == .aiRecording ? aiBaseColor.opacity(averagePower * 0.5) : .red.opacity(0),
             radius: 8
           )
           .animation(.interactiveSpring(), value: meter)
           .frame(
-            width: status == .recording ? expandedWidth : baseWidth,
+            width: (status == .recording || status == .aiRecording) ? expandedWidth : baseWidth,
             height: baseWidth
           )
-          .opacity(status == .hidden ? 0 : 1)
-          .scaleEffect(status == .hidden ? 0.0 : 1)
-          .blur(radius: status == .hidden ? 4 : 0)
+          .opacity(status == .hidden || status == .aiResponse || status == .needsModel ? 0 : 1)
+          .scaleEffect(status == .hidden || status == .aiResponse || status == .needsModel ? 0.0 : 1)
+          .blur(radius: status == .hidden || status == .aiResponse || status == .needsModel ? 4 : 0)
           .animation(.bouncy(duration: 0.3), value: status)
           .changeEffect(.glow(color: .red.opacity(0.5), radius: 8), value: status)
           .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
           .compositingGroup()
-          .task(id: status == .transcribing) {
-            while status == .transcribing, !Task.isCancelled {
+          .task(id: status == .transcribing || status == .aiTranscribing) {
+            while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
               transcribeEffect += 1
               try? await Task.sleep(for: .seconds(0.25))
             }
@@ -167,6 +184,17 @@ struct TranscriptionIndicatorView: View {
           .transition(.opacity)
           .zIndex(2)
         }
+      }
+      
+    }
+    .overlay(alignment: .top) {
+      // Show AI response modal as overlay (aligns top edge with indicator)
+      if status == .aiResponse, let response = aiResponse {
+        AIResponseModalUIKit(
+          response: response,
+          onDismiss: onDismissAI
+        )
+        .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
       }
     }
     .enableInjection()

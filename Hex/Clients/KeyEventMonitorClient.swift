@@ -11,15 +11,17 @@ private let logger = Logger(subsystem: "com.kitlangton.Hex", category: "KeyEvent
 public struct KeyEvent {
   let key: Key?
   let modifiers: Modifiers
+  let eventType: CGEventType
+  let keyCode: Int
 }
 
 public extension KeyEvent {
-  init(cgEvent: CGEvent, type _: CGEventType) {
+  init(cgEvent: CGEvent, type: CGEventType) {
     let keyCode = Int(cgEvent.getIntegerValueField(.keyboardEventKeycode))
     let key = cgEvent.type == .keyDown ? Sauce.shared.key(for: keyCode) : nil
 
     let modifiers = Modifiers.from(carbonFlags: cgEvent.flags)
-    self.init(key: key, modifiers: modifiers)
+    self.init(key: key, modifiers: modifiers, eventType: type, keyCode: keyCode)
   }
 }
 
@@ -58,6 +60,7 @@ class KeyEventMonitorClientLive {
   private var eventTapPort: CFMachPort?
   private var runLoopSource: CFRunLoopSource?
   private var continuations: [UUID: (KeyEvent) -> Bool] = [:]
+  private let continuationsLock = NSLock()
   private var isMonitoring = false
 
   init() {
@@ -72,13 +75,17 @@ class KeyEventMonitorClientLive {
   func listenForKeyPress() -> AsyncThrowingStream<KeyEvent, Error> {
     AsyncThrowingStream { continuation in
       let uuid = UUID()
+      
+      continuationsLock.lock()
       continuations[uuid] = { event in
         continuation.yield(event)
         return false
       }
+      let shouldStartMonitoring = continuations.count == 1
+      continuationsLock.unlock()
 
       // Start monitoring if this is the first subscription
-      if continuations.count == 1 {
+      if shouldStartMonitoring {
         startMonitoring()
       }
 
@@ -90,10 +97,13 @@ class KeyEventMonitorClientLive {
   }
 
   private func removeContinuation(uuid: UUID) {
+    continuationsLock.lock()
     continuations[uuid] = nil
+    let shouldStopMonitoring = continuations.isEmpty
+    continuationsLock.unlock()
 
     // Stop monitoring if no more listeners
-    if continuations.isEmpty {
+    if shouldStopMonitoring {
       stopMonitoring()
     }
   }
@@ -153,9 +163,13 @@ class KeyEventMonitorClientLive {
   // TODO: Handle removing the handler from the continuations on deinit/cancellation
   func handleKeyEvent(_ handler: @escaping (KeyEvent) -> Bool) {
     let uuid = UUID()
+    
+    continuationsLock.lock()
     continuations[uuid] = handler
+    let shouldStartMonitoring = continuations.count == 1
+    continuationsLock.unlock()
 
-    if continuations.count == 1 {
+    if shouldStartMonitoring {
       startMonitoring()
     }
   }
@@ -180,7 +194,11 @@ class KeyEventMonitorClientLive {
   private func processKeyEvent(_ keyEvent: KeyEvent) -> Bool {
     var handled = false
 
-    for continuation in continuations.values {
+    continuationsLock.lock()
+    let handlers = Array(continuations.values)
+    continuationsLock.unlock()
+    
+    for continuation in handlers {
       if continuation(keyEvent) {
         handled = true
       }

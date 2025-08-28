@@ -7,6 +7,9 @@
 import Dependencies
 import Foundation
 import SwiftUI
+import Sauce
+import CoreGraphics
+import IOKit
 
 /// Implements both "Press-and-Hold" and "Double-Tap Lock" in a single state machine.
 ///
@@ -35,6 +38,7 @@ public struct HotKeyProcessor {
 
     public var hotkey: HotKey
     public var useDoubleTapOnly: Bool = false
+    public var aiKey: Key? = nil // The AI modifier key
 
     public private(set) var state: State = .idle
     private var lastTapAt: Date? // Time of the most recent release
@@ -43,9 +47,10 @@ public struct HotKeyProcessor {
     public static let doubleTapThreshold: TimeInterval = 0.3
     public static let pressAndHoldCancelThreshold: TimeInterval = 1.0
 
-    public init(hotkey: HotKey, useDoubleTapOnly: Bool = false) {
+    public init(hotkey: HotKey, useDoubleTapOnly: Bool = false, aiKey: Key? = nil) {
         self.hotkey = hotkey
         self.useDoubleTapOnly = useDoubleTapOnly
+        self.aiKey = aiKey
     }
 
     public var isMatched: Bool {
@@ -58,6 +63,7 @@ public struct HotKeyProcessor {
     }
 
     public mutating func process(keyEvent: KeyEvent) -> Output? {
+        
         // 1) ESC => immediate cancel
         if keyEvent.key == .escape {
             print("ESCAPE HIT IN STATE: \(state)")
@@ -78,7 +84,7 @@ public struct HotKeyProcessor {
 
         // 3) Matching chord => handle as "press"
         if chordMatchesHotkey(keyEvent) {
-            return handleMatchingChord()
+            return handleMatchingChord(keyEvent)
         } else {
             // Potentially become dirty if chord has extra mods or different key
             if chordIsDirty(keyEvent) {
@@ -108,11 +114,73 @@ public extension HotKeyProcessor {
 // MARK: - Core Logic
 
 extension HotKeyProcessor {
+    /// Check if any non-modifier keys are currently pressed
+    /// Returns the keyCodes of pressed non-modifier keys (excluding the AI key if specified)
+    private func getPressedNonModifierKeys() -> Set<Int> {
+        var pressedKeys = Set<Int>()
+        
+        // Check common keys that might be pressed
+        // We'll check the most common keys - this is faster than checking all 128 keys
+        let commonKeyCodes: [Int] = [
+            // Letters A-Z (0-25 in keycode)
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+            // Numbers 0-9 (29, 18, 19, 20, 21, 23, 22, 26, 28, 25)
+            29, 18, 19, 20, 21, 23, 22, 26, 28, 25,
+            // Space, Return, Tab, Delete
+            49, 36, 48, 51,
+            // Arrow keys
+            123, 124, 125, 126
+        ]
+        
+        // Use CGEventSource to check keyboard state
+        for keyCode in commonKeyCodes {
+            if CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(keyCode)) {
+                pressedKeys.insert(keyCode)
+            }
+        }
+        
+        return pressedKeys
+    }
     /// If we are idle and see chord == hotkey => pressAndHold (or potentially normal).
     /// We do *not* lock on second press. That is deferred until the second release.
-    private mutating func handleMatchingChord() -> Output? {
+    private mutating func handleMatchingChord(_ keyEvent: KeyEvent) -> Output? {
         switch state {
         case .idle:
+            // Check keyboard state only when hotkey is detected
+            let pressedKeys = getPressedNonModifierKeys()
+            
+            // For modifier-only hotkeys, check if any non-AI keys are pressed
+            if hotkey.key == nil && !pressedKeys.isEmpty {
+                // Get the keyCode for the AI key (if we have one)
+                let aiKeyCode = aiKey?.QWERTYKeyCode
+                
+                // Check if any of the pressed keys are NOT the AI key
+                let hasNonAIKeys = pressedKeys.contains { keyCode in
+                    if let aiKeyCode = aiKeyCode {
+                        return keyCode != Int(aiKeyCode)
+                    } else {
+                        // No AI key defined, so any pressed key is a non-AI key
+                        return true
+                    }
+                }
+                
+                if hasNonAIKeys {
+                    // Rejected - other keys are pressed
+                    return nil
+                }
+            }
+            
+            // For key+modifier hotkeys, check if other keys are pressed
+            if let hotkeyKey = hotkey.key {
+                // The only pressed key should be the hotkey's key itself
+                let hotkeyKeyCode = hotkeyKey.QWERTYKeyCode
+                let otherPressedKeys = pressedKeys.filter { $0 != Int(hotkeyKeyCode) }
+                if !otherPressedKeys.isEmpty {
+                    // Rejected - other keys are pressed
+                    return nil
+                }
+            }
+            
             // If doubleTapOnly mode is enabled and the hotkey has a key component,
             // we want to delay starting recording until we see the double-tap
             if useDoubleTapOnly && hotkey.key != nil {

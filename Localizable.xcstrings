@@ -4,6 +4,12 @@
     "" : {
       "shouldTranslate" : false
     },
+    "(Not downloaded)" : {
+
+    },
+    "%lldGB RAM required" : {
+
+    },
     "•" : {
       "shouldTranslate" : false
     },
@@ -47,6 +53,15 @@
     "Accuracy" : {
 
     },
+    "AI Assistant" : {
+
+    },
+    "AI Models" : {
+
+    },
+    "AI Modifier (press with hotkey to trigger AI)" : {
+
+    },
     "Are you sure you want to delete all transcripts? This action cannot be undone." : {
       "comment" : "Delete transcript history confirm",
       "localizations" : {
@@ -57,6 +72,9 @@
           }
         }
       }
+    },
+    "Auto-dismiss at %lld WPM" : {
+
     },
     "Become a Sponsor" : {
 
@@ -71,6 +89,9 @@
           }
         }
       }
+    },
+    "Capability" : {
+
     },
     "Changelog" : {
       "localizations" : {
@@ -123,6 +144,9 @@
           }
         }
       }
+    },
+    "Compatible" : {
+
     },
     "Copied" : {
       "comment" : "Transcription from history copied.",
@@ -225,7 +249,6 @@
     },
     "Downloading %@..." : {
       "comment" : "In Transcription Model section in settings.",
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -262,6 +285,9 @@
           }
         }
       }
+    },
+    "Error: %@" : {
+
     },
     "General" : {
       "comment" : "General section in Settings Header.",
@@ -310,6 +336,9 @@
     "History Disabled" : {
 
     },
+    "Hold the AI modifier key while recording to send transcription to Ollama for processing. The response will auto-dismiss based on reading speed." : {
+
+    },
     "Hot Key" : {
       "comment" : "hotkey section in settings.",
       "localizations" : {
@@ -334,12 +363,17 @@
     "Input Device" : {
 
     },
+    "Launch Ollama" : {
+
+    },
     "Maximum History Entries" : {
+
+    },
+    "May be slow" : {
 
     },
     "Microphone" : {
       "comment" : "Microphone permission.",
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -350,9 +384,6 @@
       }
     },
     "Microphone Selection" : {
-
-    },
-    "Microphone!" : {
 
     },
     "Model" : {
@@ -371,6 +402,9 @@
           }
         }
       }
+    },
+    "Never auto-dismiss" : {
+
     },
     "No models found." : {
       "comment" : "Replacement text in transcription model section when no available models are found",
@@ -396,6 +430,9 @@
       }
     },
     "Oldest entries will be automatically deleted when limit is reached" : {
+
+    },
+    "Ollama Service" : {
 
     },
     "Open on Login" : {
@@ -470,10 +507,16 @@
     "Quit" : {
 
     },
+    "Recommended" : {
+
+    },
     "Recommended for custom hotkeys to avoid interfering with normal usage" : {
 
     },
     "Refresh available input devices" : {
+
+    },
+    "Refresh status" : {
 
     },
     "Request Permission" : {
@@ -486,6 +529,12 @@
           }
         }
       }
+    },
+    "Reset to Default" : {
+
+    },
+    "Save" : {
+
     },
     "Save Transcription History" : {
 
@@ -596,6 +645,9 @@
     "Speed" : {
 
     },
+    "Status" : {
+
+    },
     "Stop playback" : {
       "comment" : "Help text for play button in history view.",
       "localizations" : {
@@ -611,6 +663,9 @@
 
     },
     "System Default" : {
+
+    },
+    "System Prompt" : {
 
     },
     "Transcription history is currently disabled." : {
