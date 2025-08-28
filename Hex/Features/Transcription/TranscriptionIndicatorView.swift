@@ -5,6 +5,7 @@
 //  Created by Kit Langton on 1/10/25.
 //
 import Inject
+import Pow
 import SwiftData
 import SwiftUI
 
@@ -82,6 +83,43 @@ struct TranscriptionIndicatorView: View {
   }
 
   @State var transcribeEffect = 0
+  
+  // Helper computed properties to simplify complex expressions
+  private var isRecordingOrAIRecording: Bool {
+    status == .recording || status == .aiRecording
+  }
+  
+  private var recordingFillColor: Color {
+    if status == .recording {
+      return Color.red
+    } else if status == .aiRecording {
+      return aiBaseColor
+    } else {
+      return Color.clear
+    }
+  }
+  
+  private var recordingFillOpacity: Double {
+    guard isRecordingOrAIRecording else { return 0 }
+    let averagePower = min(1, meter.averagePower * 3)
+    return averagePower < 0.1 ? averagePower / 0.1 : 1
+  }
+  
+  private var whiteFillOpacity: Double {
+    guard isRecordingOrAIRecording else { return 0 }
+    let averagePower = min(1, meter.averagePower * 3)
+    return averagePower < 0.1 ? averagePower / 0.1 : 0.5
+  }
+  
+  private var peakFillOpacity: Double {
+    guard isRecordingOrAIRecording else { return 0 }
+    let peakPower = min(1, meter.peakPower * 3)
+    return peakPower < 0.1 ? (peakPower / 0.1) * 0.5 : 0.5
+  }
+  
+  private var shouldHideOrb: Bool {
+    status == .hidden || status == .aiResponse || status == .needsModel
+  }
 
   var body: some View {
     let averagePower = min(1, meter.averagePower * 3)
@@ -114,14 +152,14 @@ struct TranscriptionIndicatorView: View {
           }
           .overlay(alignment: .center) {
             RoundedRectangle(cornerRadius: cornerRadius)
-              .fill((status == .recording ? Color.red : status == .aiRecording ? aiBaseColor : Color.clear).opacity((status == .recording || status == .aiRecording) ? (averagePower < 0.1 ? averagePower / 0.1 : 1) : 0))
+              .fill(recordingFillColor.opacity(recordingFillOpacity))
               .blur(radius: 2)
               .blendMode(.screen)
               .padding(6)
           }
           .overlay(alignment: .center) {
             RoundedRectangle(cornerRadius: cornerRadius)
-              .fill(Color.white.opacity(status == .recording || status == .aiRecording ? (averagePower < 0.1 ? averagePower / 0.1 : 0.5) : 0))
+              .fill(Color.white.opacity(whiteFillOpacity))
               .blur(radius: 1)
               .blendMode(.screen)
               .frame(maxWidth: .infinity, alignment: .center)
@@ -129,8 +167,9 @@ struct TranscriptionIndicatorView: View {
           }
           .overlay(alignment: .center) {
             GeometryReader { proxy in
+              let peakPower = min(1, meter.peakPower * 3)
               RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(Color.red.opacity(status == .recording || status == .aiRecording ? (peakPower < 0.1 ? (peakPower / 0.1) * 0.5 : 0.5) : 0))
+                .fill(Color.red.opacity(peakFillOpacity))
                 .frame(width: max(proxy.size.width * (peakPower + 0.6), 0), height: proxy.size.height, alignment: .center)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .blur(radius: 4)
@@ -150,12 +189,12 @@ struct TranscriptionIndicatorView: View {
           )
           .animation(.interactiveSpring(), value: meter)
           .frame(
-            width: (status == .recording || status == .aiRecording) ? expandedWidth : baseWidth,
+            width: isRecordingOrAIRecording ? expandedWidth : baseWidth,
             height: baseWidth
           )
-          .opacity(status == .hidden || status == .aiResponse || status == .needsModel ? 0 : 1)
-          .scaleEffect(status == .hidden || status == .aiResponse || status == .needsModel ? 0.0 : 1)
-          .blur(radius: status == .hidden || status == .aiResponse || status == .needsModel ? 4 : 0)
+          .opacity(shouldHideOrb ? 0 : 1)
+          .scaleEffect(shouldHideOrb ? 0.0 : 1)
+          .blur(radius: shouldHideOrb ? 4 : 0)
           .animation(.bouncy(duration: 0.3), value: status)
           .changeEffect(.glow(color: .red.opacity(0.5), radius: 8), value: status)
           .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
