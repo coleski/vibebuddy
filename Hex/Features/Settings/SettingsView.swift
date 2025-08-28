@@ -328,16 +328,13 @@ struct SettingsView: View {
 					}
 				}
 				
-				// Reading Speed
+				// Dismissal Speed
 				Label {
-					VStack(alignment: .leading, spacing: 4) {
-						Slider(value: $store.hexSettings.aiResponseReadingSpeed, in: 0...1000, step: 50)
-							.onChange(of: store.hexSettings.aiResponseReadingSpeed) { newValue in
-								print("[SettingsView] WPM slider changed to: \(newValue)")
-							}
-						Text(store.hexSettings.aiResponseReadingSpeed == 0 ? "Never auto-dismiss" : "Auto-dismiss at \(Int(store.hexSettings.aiResponseReadingSpeed)) WPM")
-							.font(.caption)
-							.foregroundColor(.secondary)
+					Slider(value: $store.hexSettings.aiResponseReadingSpeed, in: 0...1000, step: 50) {
+						Text("Dismissal Speed \(Int(store.hexSettings.aiResponseReadingSpeed)) WPM")
+					}
+					.onChange(of: store.hexSettings.aiResponseReadingSpeed) { newValue in
+						print("[SettingsView] WPM slider changed to: \(newValue)")
 					}
 				} icon: {
 					Image(systemName: "timer")
