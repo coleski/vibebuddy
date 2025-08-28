@@ -48,7 +48,7 @@ struct TranscriptionFeature {
     case hideNeedsModelIndicator
 
     // Cancel entire flow
-    case cancel
+    case cancel(playSound: Bool = true)
 
     // Transcription result flow
     case transcriptionResult(String)
@@ -174,12 +174,12 @@ struct TranscriptionFeature {
 
       // MARK: - Cancel Entire Flow
 
-      case .cancel:
+      case let .cancel(playSound):
         // Only cancel if we're in the middle of recording or transcribing
         guard state.isRecording || state.isTranscribing else {
           return .none
         }
-        return handleCancel(&state)
+        return handleCancel(&state, playSound: playSound)
       }
     }
   }
@@ -220,7 +220,7 @@ private extension TranscriptionFeature {
         if keyEvent.key == .escape, keyEvent.modifiers.isEmpty,
            hotKeyProcessor.state == .idle
         {
-          Task { await send(.cancel) }
+          Task { await send(.cancel(playSound: true)) }
           return false
         }
         
@@ -267,7 +267,7 @@ private extension TranscriptionFeature {
           return false
 
         case .cancel:
-          Task { await send(.cancel) }
+          Task { await send(.cancel(playSound: true)) }
           return true
 
         case .none:
@@ -279,10 +279,10 @@ private extension TranscriptionFeature {
             let isAIKey = (keyEvent.key == hexSettings.aiModifierKey)
             
             if !isHotkey && !isAIKey && keyEvent.key != nil {
-              // Cancel the recording
+              // Cancel the recording (silent - accidental key detection)
               isCurrentlyRecording = false
               isAIKeyHeld = false
-              Task { await send(.cancel) }
+              Task { await send(.cancel(playSound: false)) }
               return true
             }
           }
@@ -305,7 +305,7 @@ private extension TranscriptionFeature {
 
 private extension TranscriptionFeature {
   func handleHotKeyPressed(isTranscribing: Bool, minimumKeyTime: Double) -> Effect<Action> {
-    let maybeCancel = isTranscribing ? Effect.send(Action.cancel) : .none
+    let maybeCancel = isTranscribing ? Effect.send(Action.cancel(playSound: true)) : .none
 
     // We wait minimumKeyTime before actually sending `.startRecording`
     // so the user can do a quick press => do something else
@@ -537,7 +537,7 @@ private extension TranscriptionFeature {
 // MARK: - Cancel Handler
 
 private extension TranscriptionFeature {
-  func handleCancel(_ state: inout State) -> Effect<Action> {
+  func handleCancel(_ state: inout State, playSound: Bool) -> Effect<Action> {
     state.isTranscribing = false
     state.isRecording = false
     state.isPrewarming = false
@@ -553,7 +553,9 @@ private extension TranscriptionFeature {
       .run { _ in
         // Stop recording to properly release the microphone
         _ = await recording.stopRecording()
-        await soundEffect.play(.cancel)
+        if playSound {
+          await soundEffect.play(.cancel)
+        }
       }
     )
   }
