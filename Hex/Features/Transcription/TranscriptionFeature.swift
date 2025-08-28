@@ -271,6 +271,22 @@ private extension TranscriptionFeature {
           return true
 
         case .none:
+          // If we're recording and a non-hotkey/non-AI key is pressed, cancel the recording
+          if isCurrentlyRecording {
+            // Check if this is neither the hotkey nor the AI key
+            let isHotkey = (keyEvent.key == hotKeyProcessor.hotkey.key && 
+                           keyEvent.modifiers == hotKeyProcessor.hotkey.modifiers)
+            let isAIKey = (keyEvent.key == hexSettings.aiModifierKey)
+            
+            if !isHotkey && !isAIKey && keyEvent.key != nil {
+              // Cancel the recording
+              isCurrentlyRecording = false
+              isAIKeyHeld = false
+              Task { await send(.cancel) }
+              return true
+            }
+          }
+          
           // If we detect repeated same chord, maybe intercept.
           if let pressedKey = keyEvent.key,
              pressedKey == hotKeyProcessor.hotkey.key,
