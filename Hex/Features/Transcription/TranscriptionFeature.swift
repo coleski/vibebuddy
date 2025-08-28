@@ -541,11 +541,18 @@ private extension TranscriptionFeature {
     state.isTranscribing = false
     state.isRecording = false
     state.isPrewarming = false
+    state.isAIMode = false
+    state.isGeneratingAI = false
+
+    // Allow system to sleep again if it was prevented
+    reallowSystemSleep(&state)
 
     return .merge(
       .cancel(id: CancelID.transcription),
       .cancel(id: CancelID.delayedRecord),
       .run { _ in
+        // Stop recording to properly release the microphone
+        _ = await recording.stopRecording()
         await soundEffect.play(.cancel)
       }
     )
