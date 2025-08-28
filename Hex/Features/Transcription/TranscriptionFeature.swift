@@ -172,7 +172,7 @@ private extension TranscriptionFeature {
   /// Effect to start monitoring hotkey events through the `keyEventMonitor`.
   func startHotKeyMonitoringEffect() -> Effect<Action> {
     .run { send in
-      var hotKeyProcessor: HotKeyProcessor = .init(hotkey: HotKey(key: nil, modifiers: [.option]))
+      var hotKeyProcessor: HotKeyProcessor = .init(hotkey: HotKey(key: nil, modifiers: [.option]), aiKey: nil)
       @Shared(.isSettingHotKey) var isSettingHotKey: Bool
       @Shared(.hexSettings) var hexSettings: HexSettings
       
@@ -206,6 +206,7 @@ private extension TranscriptionFeature {
         // Always keep hotKeyProcessor in sync with current user hotkey preference
         hotKeyProcessor.hotkey = hexSettings.hotkey
         hotKeyProcessor.useDoubleTapOnly = hexSettings.useDoubleTapOnly
+        hotKeyProcessor.aiKey = hexSettings.aiModifierKey
 
         // Process the key event
         switch hotKeyProcessor.process(keyEvent: keyEvent) {
@@ -380,10 +381,11 @@ private extension TranscriptionFeature {
     if state.isAIMode {
       state.isGeneratingAI = true
       let model = state.hexSettings.selectedOllamaModel
+      let systemPrompt = state.hexSettings.ollamaSystemPrompt
       
       return .run { send in
         do {
-          let response = try await ollama.generate(result, model)
+          let response = try await ollama.generate(result, model, systemPrompt)
           await send(.aiResponseReceived(response))
         } catch {
           await send(.aiGenerationError(error))

@@ -9,7 +9,7 @@ import ComposableArchitecture
 import Foundation
 
 public struct OllamaClient {
-  var generate: @Sendable (String, String) async throws -> String
+  var generate: @Sendable (String, String, String?) async throws -> String
   var listModels: @Sendable () async throws -> [OllamaModel]
   var isRunning: @Sendable () async -> Bool
   var pullModel: @Sendable (String, @escaping (Double) -> Void) async throws -> Void
@@ -38,13 +38,13 @@ public struct OllamaModel: Equatable, Codable {
 
 extension OllamaClient: DependencyKey {
   public static let liveValue = OllamaClient(
-    generate: { prompt, model in
+    generate: { prompt, model, customSystemPrompt in
       let url = URL(string: "http://localhost:11434/api/generate")!
       var request = URLRequest(url: url)
       request.httpMethod = "POST"
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
       
-      let systemPrompt = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
+      let systemPrompt = customSystemPrompt ?? "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
       
       let body: [String: Any] = [
         "model": model,

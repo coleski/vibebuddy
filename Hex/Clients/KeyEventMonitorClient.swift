@@ -11,15 +11,17 @@ private let logger = Logger(subsystem: "com.kitlangton.Hex", category: "KeyEvent
 public struct KeyEvent {
   let key: Key?
   let modifiers: Modifiers
+  let eventType: CGEventType
+  let keyCode: Int
 }
 
 public extension KeyEvent {
-  init(cgEvent: CGEvent, type _: CGEventType) {
+  init(cgEvent: CGEvent, type: CGEventType) {
     let keyCode = Int(cgEvent.getIntegerValueField(.keyboardEventKeycode))
     let key = cgEvent.type == .keyDown ? Sauce.shared.key(for: keyCode) : nil
 
     let modifiers = Modifiers.from(carbonFlags: cgEvent.flags)
-    self.init(key: key, modifiers: modifiers)
+    self.init(key: key, modifiers: modifiers, eventType: type, keyCode: keyCode)
   }
 }
 

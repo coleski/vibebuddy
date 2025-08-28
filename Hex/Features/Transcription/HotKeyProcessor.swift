@@ -7,6 +7,8 @@
 import Dependencies
 import Foundation
 import SwiftUI
+import Sauce
+import CoreGraphics
 
 /// Implements both "Press-and-Hold" and "Double-Tap Lock" in a single state machine.
 ///
@@ -35,17 +37,20 @@ public struct HotKeyProcessor {
 
     public var hotkey: HotKey
     public var useDoubleTapOnly: Bool = false
+    public var aiKey: Key? = nil // The AI modifier key
 
     public private(set) var state: State = .idle
     private var lastTapAt: Date? // Time of the most recent release
     private var isDirty: Bool = false
+    private var pressedKeyCodes: Set<Int> = [] // Track all currently pressed key codes
 
     public static let doubleTapThreshold: TimeInterval = 0.3
     public static let pressAndHoldCancelThreshold: TimeInterval = 1.0
 
-    public init(hotkey: HotKey, useDoubleTapOnly: Bool = false) {
+    public init(hotkey: HotKey, useDoubleTapOnly: Bool = false, aiKey: Key? = nil) {
         self.hotkey = hotkey
         self.useDoubleTapOnly = useDoubleTapOnly
+        self.aiKey = aiKey
     }
 
     public var isMatched: Bool {
@@ -58,6 +63,26 @@ public struct HotKeyProcessor {
     }
 
     public mutating func process(keyEvent: KeyEvent) -> Output? {
+        // Log incoming event
+        print("[HotKeyProcessor] Event: type=\(keyEvent.eventType.rawValue), key=\(String(describing: keyEvent.key)), keyCode=\(keyEvent.keyCode), mods=\(keyEvent.modifiers)")
+        
+        // Track key presses and releases using keyCodes
+        if keyEvent.eventType == .keyDown {
+            // Track this keyCode as pressed
+            pressedKeyCodes.insert(keyEvent.keyCode)
+            print("[HotKeyProcessor] KeyDown: Added keyCode \(keyEvent.keyCode), pressed keys now: \(pressedKeyCodes)")
+        } else if keyEvent.eventType == .keyUp {
+            // Remove this keyCode from pressed set
+            pressedKeyCodes.remove(keyEvent.keyCode)
+            print("[HotKeyProcessor] KeyUp: Removed keyCode \(keyEvent.keyCode), pressed keys now: \(pressedKeyCodes)")
+        }
+        
+        // Clear all pressed keys on full release (no modifiers, no key) 
+        if keyEvent.modifiers.isEmpty && keyEvent.key == nil && keyEvent.eventType == .flagsChanged {
+            print("[HotKeyProcessor] Full release detected, clearing all pressed keys")
+            pressedKeyCodes.removeAll()
+        }
+        
         // 1) ESC => immediate cancel
         if keyEvent.key == .escape {
             print("ESCAPE HIT IN STATE: \(state)")
@@ -71,6 +96,7 @@ public struct HotKeyProcessor {
         if isDirty {
             if chordIsFullyReleased(keyEvent) {
                 isDirty = false
+                pressedKeyCodes.removeAll() // Clear tracked keys on full release
             } else {
                 return nil
             }
@@ -78,8 +104,10 @@ public struct HotKeyProcessor {
 
         // 3) Matching chord => handle as "press"
         if chordMatchesHotkey(keyEvent) {
-            return handleMatchingChord()
+            print("[HotKeyProcessor] Chord matches hotkey! Checking for other pressed keys...")
+            return handleMatchingChord(keyEvent)
         } else {
+            print("[HotKeyProcessor] Chord doesn't match hotkey")
             // Potentially become dirty if chord has extra mods or different key
             if chordIsDirty(keyEvent) {
                 isDirty = true
@@ -110,9 +138,67 @@ public extension HotKeyProcessor {
 extension HotKeyProcessor {
     /// If we are idle and see chord == hotkey => pressAndHold (or potentially normal).
     /// We do *not* lock on second press. That is deferred until the second release.
-    private mutating func handleMatchingChord() -> Output? {
+    private mutating func handleMatchingChord(_ keyEvent: KeyEvent) -> Output? {
         switch state {
         case .idle:
+            // Check if there are any other keys currently pressed (besides hotkey and AI key)
+            // We need to check the pressed keyCodes
+            var allowedKeyCodes: Set<Int> = []
+            
+            // Add the hotkey's keyCode if it has a key
+            if hotkey.key != nil {
+                allowedKeyCodes.insert(keyEvent.keyCode)
+            }
+            
+            // Add the AI key's keyCode if we have one
+            // We'd need to get the keyCode for the AI key somehow
+            // For now, we'll check if any keys are pressed at all when hotkey is modifier-only
+            
+            print("[HotKeyProcessor] In idle state, checking pressed keys...")
+            print("[HotKeyProcessor] Currently pressed keyCodes: \(pressedKeyCodes)")
+            print("[HotKeyProcessor] Hotkey has key: \(String(describing: hotkey.key))")
+            print("[HotKeyProcessor] AI key: \(String(describing: aiKey))")
+            
+            // For modifier-only hotkeys, reject if ANY keys are pressed
+            // We need to check if any of the pressed keys are NOT the AI key
+            if hotkey.key == nil && !pressedKeyCodes.isEmpty {
+                print("[HotKeyProcessor] Modifier-only hotkey detected with pressed keys: \(pressedKeyCodes)")
+                
+                // Get the keyCode for the AI key (if we have one)
+                let aiKeyCode = aiKey?.QWERTYKeyCode
+                print("[HotKeyProcessor] AI key code: \(String(describing: aiKeyCode))")
+                
+                // Check if any of the pressed keys are NOT the AI key
+                let hasNonAIKeys = pressedKeyCodes.contains { keyCode in
+                    if let aiKeyCode = aiKeyCode {
+                        return keyCode != aiKeyCode
+                    } else {
+                        // No AI key defined, so any pressed key is a non-AI key
+                        return true
+                    }
+                }
+                
+                if hasNonAIKeys {
+                    print("[HotKeyProcessor] REJECTED: non-AI keys are pressed with modifier-only hotkey")
+                    return nil
+                } else {
+                    print("[HotKeyProcessor] ACCEPTED: Only AI key is pressed with modifier-only hotkey")
+                }
+            }
+            
+            // For key+modifier hotkeys, the pressed keys should only be the hotkey's key
+            if hotkey.key != nil {
+                // The only pressed keyCode should be the one from this event (the hotkey's key)
+                let otherPressedKeys = pressedKeyCodes.subtracting([keyEvent.keyCode])
+                print("[HotKeyProcessor] Key+modifier hotkey, other pressed keys: \(otherPressedKeys)")
+                if !otherPressedKeys.isEmpty {
+                    print("[HotKeyProcessor] REJECTED: other keys pressed: \(otherPressedKeys)")
+                    return nil
+                }
+            }
+            
+            print("[HotKeyProcessor] ACCEPTED: No conflicting keys detected")
+            
             // If doubleTapOnly mode is enabled and the hotkey has a key component,
             // we want to delay starting recording until we see the double-tap
             if useDoubleTapOnly && hotkey.key != nil {
@@ -243,5 +329,6 @@ extension HotKeyProcessor {
     private mutating func resetToIdle() {
         state = .idle
         lastTapAt = nil
+        pressedKeyCodes.removeAll()
     }
 }

@@ -519,6 +519,12 @@
         }
       }
     },
+    "Reset to Default" : {
+
+    },
+    "Save" : {
+
+    },
     "Save Transcription History" : {
 
     },
@@ -646,6 +652,9 @@
 
     },
     "System Default" : {
+
+    },
+    "System Prompt" : {
 
     },
     "Transcription history is currently disabled." : {

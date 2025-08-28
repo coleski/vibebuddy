@@ -199,7 +199,7 @@ public struct OllamaModelFeature {
 		case openModelLocation
 		// Effects
 		case ollamaStatusChecked(Bool)
-		case modelsLoaded([Hex.OllamaModel])
+		case modelsLoaded([OllamaModel])
 		case downloadProgress(Double)
 		case downloadCompleted(Result<String, Error>)
 	}
@@ -535,6 +535,9 @@ public struct OllamaModelView: View {
 						.font(.caption)
 				}
 				
+				// System Prompt Editor
+				SystemPromptEditor(store: store)
+				
 				// Footer
 				FooterView(store: store)
 			}
@@ -806,6 +809,90 @@ private struct ModelRow: View {
 			}
 		}
 		.padding(4)
+	}
+}
+
+private struct SystemPromptEditor: View {
+	@Bindable var store: StoreOf<OllamaModelFeature>
+	@State private var isExpanded = false
+	@State private var editingPrompt: String = ""
+	@FocusState private var isTextEditorFocused: Bool
+	
+	var body: some View {
+		VStack(alignment: .leading, spacing: 8) {
+			HStack {
+				Label("System Prompt", systemImage: "text.bubble")
+					.font(.headline)
+				
+				Spacer()
+				
+				Button(action: {
+					withAnimation(.easeInOut(duration: 0.2)) {
+						isExpanded.toggle()
+						if isExpanded {
+							editingPrompt = store.hexSettings.ollamaSystemPrompt
+							// Small delay to ensure view is visible before focusing
+							DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+								isTextEditorFocused = true
+							}
+						}
+					}
+				}) {
+					Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+						.foregroundColor(.secondary)
+				}
+				.buttonStyle(.borderless)
+			}
+			
+			if isExpanded {
+				VStack(alignment: .leading, spacing: 8) {
+					TextEditor(text: $editingPrompt)
+						.font(.system(.body, design: .monospaced))
+						.frame(minHeight: 100, maxHeight: 200)
+						.padding(4)
+						.background(Color(NSColor.textBackgroundColor))
+						.overlay(
+							RoundedRectangle(cornerRadius: 6)
+								.stroke(Color.gray.opacity(0.2), lineWidth: 1)
+						)
+						.focused($isTextEditorFocused)
+					
+					HStack {
+						Button("Reset to Default") {
+							editingPrompt = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
+						}
+						.buttonStyle(.borderless)
+						.foregroundColor(.blue)
+						
+						Spacer()
+						
+						Button("Cancel") {
+							withAnimation {
+								isExpanded = false
+								editingPrompt = store.hexSettings.ollamaSystemPrompt
+							}
+						}
+						.buttonStyle(.borderless)
+						
+						Button("Save") {
+							store.$hexSettings.withLock { settings in
+								settings.ollamaSystemPrompt = editingPrompt
+							}
+							withAnimation {
+								isExpanded = false
+							}
+						}
+						.buttonStyle(.borderedProminent)
+						.controlSize(.small)
+					}
+				}
+				.padding(.top, 4)
+			}
+		}
+		.padding(.vertical, 4)
+		.onAppear {
+			editingPrompt = store.hexSettings.ollamaSystemPrompt
+		}
 	}
 }
 

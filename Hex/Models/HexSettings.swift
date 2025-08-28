@@ -23,6 +23,7 @@ struct HexSettings: Codable, Equatable {
 	var selectedOllamaModel: String = "llama3.2:1b"
 	var aiModifierKey: Key = .a // Key to press during recording to trigger AI mode
 	var aiResponseReadingSpeed: Double = 250.0 // Words per minute, 0 = never dismiss
+	var ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
 
 	// Define coding keys to match struct properties
 	enum CodingKeys: String, CodingKey {
@@ -44,6 +45,7 @@ struct HexSettings: Codable, Equatable {
 		case selectedOllamaModel
 		case aiModifierKey
 		case aiResponseReadingSpeed
+		case ollamaSystemPrompt
 	}
 
 	init(
@@ -64,7 +66,8 @@ struct HexSettings: Codable, Equatable {
 		maxHistoryEntries: Int? = nil,
 		selectedOllamaModel: String = "llama3.2:1b",
 		aiModifierKey: Key = .a,
-		aiResponseReadingSpeed: Double = 250.0
+		aiResponseReadingSpeed: Double = 250.0,
+		ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
 	) {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.hotkey = hotkey
@@ -84,6 +87,7 @@ struct HexSettings: Codable, Equatable {
 		self.selectedOllamaModel = selectedOllamaModel
 		self.aiModifierKey = aiModifierKey
 		self.aiResponseReadingSpeed = aiResponseReadingSpeed
+		self.ollamaSystemPrompt = ollamaSystemPrompt
 	}
 
 	// Custom decoder that handles missing fields
@@ -123,6 +127,9 @@ struct HexSettings: Codable, Equatable {
 			try container.decodeIfPresent(Key.self, forKey: .aiModifierKey) ?? .a
 		aiResponseReadingSpeed =
 			try container.decodeIfPresent(Double.self, forKey: .aiResponseReadingSpeed) ?? 250.0
+		ollamaSystemPrompt =
+			try container.decodeIfPresent(String.self, forKey: .ollamaSystemPrompt) 
+				?? "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
 	}
 }
 
