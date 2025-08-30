@@ -28,19 +28,20 @@ struct TranscriptionIndicatorView: View {
   var meter: Meter
   var aiResponse: String?
   var onDismissAI: () -> Void = {}
+  var readingSpeed: Double = 250.0 // Default to 250 WPM if not provided
 
-  let transcribeBaseColor: Color = .blue
+  let transcribeBaseColor: Color = .red
   let aiBaseColor: Color = .purple
 
   private var backgroundColor: Color {
     switch status {
     case .hidden: return Color.clear
-    case .optionKeyPressed: return Color.black
-    case .recording: return .red.mix(with: .black, by: 0.5).mix(with: .red, by: meter.averagePower * 3)
-    case .aiRecording: return aiBaseColor.mix(with: .black, by: 0.5).mix(with: aiBaseColor, by: meter.averagePower * 3)
-    case .transcribing: return transcribeBaseColor.mix(with: .black, by: 0.5)
-    case .aiTranscribing: return aiBaseColor.mix(with: .black, by: 0.5)
-    case .prewarming: return transcribeBaseColor.mix(with: .black, by: 0.5)
+    case .optionKeyPressed: return Color.white
+    case .recording: return Color.white
+    case .aiRecording: return Color.white
+    case .transcribing: return Color.white
+    case .aiTranscribing: return Color.white
+    case .prewarming: return Color.white
     case .needsModel: return Color.white
     case .aiResponse: return Color.white.opacity(0.95)
     }
@@ -49,26 +50,26 @@ struct TranscriptionIndicatorView: View {
   private var strokeColor: Color {
     switch status {
     case .hidden: return Color.clear
-    case .optionKeyPressed: return Color.black
-    case .recording: return Color.red.mix(with: .white, by: 0.1).opacity(0.6)
-    case .aiRecording: return aiBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
-    case .transcribing: return transcribeBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
-    case .aiTranscribing: return aiBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
-    case .prewarming: return transcribeBaseColor.mix(with: .white, by: 0.1).opacity(0.6)
-    case .needsModel: return Color.gray.opacity(0.3)
-    case .aiResponse: return Color.gray.opacity(0.3)
+    case .optionKeyPressed: return Color.black.opacity(0.8)
+    case .recording: return transcribeBaseColor.opacity(0.9)
+    case .aiRecording: return aiBaseColor.opacity(0.9)
+    case .transcribing: return transcribeBaseColor.opacity(0.9)
+    case .aiTranscribing: return aiBaseColor.opacity(0.9)
+    case .prewarming: return transcribeBaseColor.opacity(0.9)
+    case .needsModel: return Color.black.opacity(0.5)
+    case .aiResponse: return Color.black.opacity(0.5)
     }
   }
 
   private var innerShadowColor: Color {
     switch status {
     case .hidden: return Color.clear
-    case .optionKeyPressed: return Color.clear
-    case .recording: return Color.red
-    case .aiRecording: return aiBaseColor
-    case .transcribing: return transcribeBaseColor
-    case .aiTranscribing: return aiBaseColor
-    case .prewarming: return transcribeBaseColor
+    case .optionKeyPressed: return Color.black.opacity(0.1)
+    case .recording: return Color.red.opacity(0.2)
+    case .aiRecording: return aiBaseColor.opacity(0.2)
+    case .transcribing: return transcribeBaseColor.opacity(0.2)
+    case .aiTranscribing: return aiBaseColor.opacity(0.2)
+    case .prewarming: return transcribeBaseColor.opacity(0.2)
     case .needsModel: return Color.gray.opacity(0.1)
     case .aiResponse: return Color.gray.opacity(0.2)
     }
@@ -121,9 +122,135 @@ struct TranscriptionIndicatorView: View {
     status == .hidden || status == .aiResponse || status == .needsModel
   }
 
-  var body: some View {
+  @ViewBuilder
+  private var smileyFace: some View {
+    if !shouldHideOrb && status != .optionKeyPressed {
+      GeometryReader { geometry in
+        let containerWidth = geometry.size.width
+        let containerHeight = geometry.size.height
+        let center = CGPoint(x: containerWidth / 2, y: containerHeight / 2)
+        
+        // Keep eye size constant, only vary spacing
+        let eyeSize: CGFloat = 2
+        let eyeSpacing: CGFloat = isRecordingOrAIRecording ? containerWidth * 0.35 : 3
+        
+        ZStack {
+          // Eyes
+          HStack(spacing: eyeSpacing) {
+            Circle()
+              .fill(Color.black)
+              .frame(width: eyeSize, height: eyeSize)
+            Circle()
+              .fill(Color.black)
+              .frame(width: eyeSize, height: eyeSize)
+          }
+          .position(x: center.x, y: center.y - 2)
+          
+          // Smile - spans between the eyes
+          Path { path in
+            let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
+            let smileWidth = eyeTotalWidth * 0.75
+            let height: CGFloat = isRecordingOrAIRecording ? containerHeight * 0.15 : 2
+            let yOffset = center.y + (isRecordingOrAIRecording ? containerHeight * 0.15 : 3)
+            
+            path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
+            path.addQuadCurve(
+              to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
+              control: CGPoint(x: center.x, y: yOffset + height)
+            )
+          }
+          .stroke(Color.black, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
+        }
+      }
+      .opacity((status == .transcribing || status == .aiTranscribing) ? 0.3 : 0.9)
+    }
+  }
+  
+  @ViewBuilder
+  private var orbView: some View {
     let averagePower = min(1, meter.averagePower * 3)
-    let peakPower = min(1, meter.peakPower * 3)
+    
+    Capsule()
+      .fill(backgroundColor.shadow(.inner(color: innerShadowColor, radius: 4)))
+      .overlay {
+        Capsule()
+          .stroke(strokeColor, lineWidth: 2)
+          .blendMode(.normal)
+      }
+      .overlay(alignment: .center) {
+        RoundedRectangle(cornerRadius: cornerRadius)
+          .fill(recordingFillColor.opacity(recordingFillOpacity))
+          .blur(radius: 2)
+          .blendMode(.screen)
+          .padding(6)
+      }
+      .overlay(alignment: .center) {
+        RoundedRectangle(cornerRadius: cornerRadius)
+          .fill(Color.white.opacity(whiteFillOpacity))
+          .blur(radius: 1)
+          .blendMode(.screen)
+          .frame(maxWidth: .infinity, alignment: .center)
+          .padding(7)
+      }
+      .overlay {
+        smileyFace
+      }
+      .cornerRadius(cornerRadius)
+      .shadow(color: shadowColor1, radius: 6)
+      .shadow(color: shadowColor2, radius: 12)
+      .animation(.interactiveSpring(), value: meter)
+      .frame(
+        width: isRecordingOrAIRecording ? expandedWidth : baseWidth,
+        height: baseWidth
+      )
+      .opacity(shouldHideOrb ? 0 : 1)
+      .scaleEffect(shouldHideOrb ? 0.0 : 1)
+      .blur(radius: shouldHideOrb ? 4 : 0)
+      .animation(.bouncy(duration: 0.3), value: status)
+      .changeEffect(.glow(color: glowColor, radius: 10), value: status)
+      .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
+      .compositingGroup()
+      .task(id: status == .transcribing || status == .aiTranscribing) {
+        while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
+          transcribeEffect += 1
+          try? await Task.sleep(for: .seconds(0.25))
+        }
+      }
+  }
+  
+  private var shadowColor1: Color {
+    let averagePower = min(1, meter.averagePower * 3)
+    switch status {
+    case .recording: return .red.opacity(averagePower * 0.8)
+    case .aiRecording: return aiBaseColor.opacity(averagePower * 0.8)
+    case .transcribing: return transcribeBaseColor.opacity(0.6)
+    case .aiTranscribing: return aiBaseColor.opacity(0.6)
+    default: return .clear
+    }
+  }
+  
+  private var shadowColor2: Color {
+    let averagePower = min(1, meter.averagePower * 3)
+    switch status {
+    case .recording: return .orange.opacity(averagePower * 0.6)
+    case .aiRecording: return .yellow.opacity(averagePower * 0.6)
+    case .transcribing: return transcribeBaseColor.opacity(0.4)
+    case .aiTranscribing: return aiBaseColor.opacity(0.4)
+    default: return .clear
+    }
+  }
+  
+  private var glowColor: Color {
+    switch status {
+    case .recording: return .red.opacity(0.7)
+    case .aiRecording: return aiBaseColor.opacity(0.7)
+    case .transcribing: return transcribeBaseColor.opacity(0.7)
+    case .aiTranscribing: return aiBaseColor.opacity(0.7)
+    default: return .clear
+    }
+  }
+  
+  var body: some View {
     ZStack {
       // Show "Needs model" text in place of the orb
       if status == .needsModel {
@@ -142,69 +269,7 @@ struct TranscriptionIndicatorView: View {
           )
           .transition(.opacity.combined(with: .scale))
       } else {
-        // Show the normal orb for all other states
-        Capsule()
-          .fill(backgroundColor.shadow(.inner(color: innerShadowColor, radius: 4)))
-          .overlay {
-            Capsule()
-              .stroke(strokeColor, lineWidth: 1)
-              .blendMode(.screen)
-          }
-          .overlay(alignment: .center) {
-            RoundedRectangle(cornerRadius: cornerRadius)
-              .fill(recordingFillColor.opacity(recordingFillOpacity))
-              .blur(radius: 2)
-              .blendMode(.screen)
-              .padding(6)
-          }
-          .overlay(alignment: .center) {
-            RoundedRectangle(cornerRadius: cornerRadius)
-              .fill(Color.white.opacity(whiteFillOpacity))
-              .blur(radius: 1)
-              .blendMode(.screen)
-              .frame(maxWidth: .infinity, alignment: .center)
-              .padding(7)
-          }
-          .overlay(alignment: .center) {
-            GeometryReader { proxy in
-              let peakPower = min(1, meter.peakPower * 3)
-              RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(Color.red.opacity(peakFillOpacity))
-                .frame(width: max(proxy.size.width * (peakPower + 0.6), 0), height: proxy.size.height, alignment: .center)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .blur(radius: 4)
-                .blendMode(.screen)
-            }.padding(6)
-          }
-          .cornerRadius(cornerRadius)
-          .shadow(
-            color: status == .recording ? .red.opacity(averagePower) : 
-                   status == .aiRecording ? aiBaseColor.opacity(averagePower) : .red.opacity(0),
-            radius: 4
-          )
-          .shadow(
-            color: status == .recording ? .red.opacity(averagePower * 0.5) : 
-                   status == .aiRecording ? aiBaseColor.opacity(averagePower * 0.5) : .red.opacity(0),
-            radius: 8
-          )
-          .animation(.interactiveSpring(), value: meter)
-          .frame(
-            width: isRecordingOrAIRecording ? expandedWidth : baseWidth,
-            height: baseWidth
-          )
-          .opacity(shouldHideOrb ? 0 : 1)
-          .scaleEffect(shouldHideOrb ? 0.0 : 1)
-          .blur(radius: shouldHideOrb ? 4 : 0)
-          .animation(.bouncy(duration: 0.3), value: status)
-          .changeEffect(.glow(color: .red.opacity(0.5), radius: 8), value: status)
-          .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
-          .compositingGroup()
-          .task(id: status == .transcribing || status == .aiTranscribing) {
-            while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
-              transcribeEffect += 1
-              try? await Task.sleep(for: .seconds(0.25))
-            }
-          }
+        orbView
         
         // Show tooltip when prewarming
         if status == .prewarming {
@@ -231,7 +296,8 @@ struct TranscriptionIndicatorView: View {
       if status == .aiResponse, let response = aiResponse {
         AIResponseModalUIKit(
           response: response,
-          onDismiss: onDismissAI
+          onDismiss: onDismissAI,
+          readingSpeed: readingSpeed
         )
         .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
       }
@@ -240,14 +306,5 @@ struct TranscriptionIndicatorView: View {
   }
 }
 
-#Preview("HEX") {
-  VStack(spacing: 8) {
-    TranscriptionIndicatorView(status: .hidden, meter: .init(averagePower: 0, peakPower: 0))
-    TranscriptionIndicatorView(status: .optionKeyPressed, meter: .init(averagePower: 0, peakPower: 0))
-    TranscriptionIndicatorView(status: .recording, meter: .init(averagePower: 0.5, peakPower: 0.5))
-    TranscriptionIndicatorView(status: .transcribing, meter: .init(averagePower: 0, peakPower: 0))
-    TranscriptionIndicatorView(status: .prewarming, meter: .init(averagePower: 0, peakPower: 0))
-    TranscriptionIndicatorView(status: .needsModel, meter: .init(averagePower: 0, peakPower: 0))
-  }
-  .padding(40)
-}
+// Preview disabled due to Meter type resolution issue
+// To test the view, run the full app or use TranscriptionFeature
