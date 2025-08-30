@@ -39,8 +39,8 @@ struct TranscriptionIndicatorView: View {
     case .optionKeyPressed: return Color.black.opacity(0.8)
     case .recording: return transcribeBaseColor
     case .aiRecording: return aiBaseColor
-    case .transcribing: return transcribeBaseColor
-    case .aiTranscribing: return aiBaseColor
+    case .transcribing: return Color.white
+    case .aiTranscribing: return Color.white
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
@@ -53,8 +53,8 @@ struct TranscriptionIndicatorView: View {
     case .optionKeyPressed: return Color.black.opacity(0.8)
     case .recording: return transcribeBaseColor
     case .aiRecording: return aiBaseColor
-    case .transcribing: return transcribeBaseColor
-    case .aiTranscribing: return aiBaseColor
+    case .transcribing: return Color.clear
+    case .aiTranscribing: return Color.clear
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
@@ -84,6 +84,8 @@ struct TranscriptionIndicatorView: View {
   }
 
   @State var transcribeEffect = 0
+  @State var ellipsisFrame = 0
+  @State var rainbowHue: Double = 0
   
   // Helper computed properties to simplify complex expressions
   private var isRecordingOrAIRecording: Bool {
@@ -154,8 +156,10 @@ struct TranscriptionIndicatorView: View {
           if status == .recording || status == .aiRecording {
             // White eyes for recording modes
             return Color.white
-          } else if status == .transcribing || status == .aiTranscribing || status == .prewarming {
-            // White eyes for transcribing states
+          } else if status == .transcribing || status == .aiTranscribing {
+            // Rainbow gradient for transcribing
+            return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9)
+          } else if status == .prewarming {
             return Color.white.opacity(0.8)
           } else {
             return Color.black
@@ -178,26 +182,35 @@ struct TranscriptionIndicatorView: View {
           }
           .position(x: center.x, y: center.y - 2)
           
-          // Smile - spans between the eyes
-          Path { path in
-            let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
-            let smileWidth = eyeTotalWidth * 0.75
-            let height: CGFloat = isRecordingOrAIRecording ? containerHeight * 0.15 : 2
-            let yOffset = center.y + (isRecordingOrAIRecording ? containerHeight * 0.15 : 3)
-            
-            path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
-            path.addQuadCurve(
-              to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
-              control: CGPoint(x: center.x, y: yOffset + height)
-            )
+          // Mouth - smile when recording, :O when transcribing
+          if status == .transcribing || status == .aiTranscribing {
+            // Hollow circle for surprised/thinking expression
+            Circle()
+              .stroke(eyeColor, lineWidth: 1.5)
+              .frame(width: 4, height: 4)
+              .position(x: center.x, y: center.y + 4)
+          } else {
+            // Regular smile
+            Path { path in
+              let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
+              let smileWidth = eyeTotalWidth * 0.75
+              let height: CGFloat = isRecordingOrAIRecording ? containerHeight * 0.15 : 2
+              let yOffset = center.y + (isRecordingOrAIRecording ? containerHeight * 0.15 : 3)
+              
+              path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
+              path.addQuadCurve(
+                to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
+                control: CGPoint(x: center.x, y: yOffset + height)
+              )
+            }
+            .stroke(eyeColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
+            .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
+                    radius: faceOpacity * 5)
           }
-          .stroke(eyeColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
-          .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
-                  radius: faceOpacity * 5)
         }
         .opacity(faceOpacity)
       }
-      .opacity((status == .transcribing || status == .aiTranscribing) ? 0.3 : 1.0)
+      .opacity((status == .transcribing || status == .aiTranscribing) ? 1.0 : 1.0)
     }
   }
   
@@ -233,6 +246,22 @@ struct TranscriptionIndicatorView: View {
         while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
           transcribeEffect += 1
           try? await Task.sleep(for: .seconds(0.25))
+        }
+      }
+      .task(id: status == .transcribing || status == .aiTranscribing) {
+        ellipsisFrame = 0
+        while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
+          ellipsisFrame = (ellipsisFrame + 1) % 3
+          try? await Task.sleep(for: .milliseconds(300))
+        }
+      }
+      .task(id: status == .transcribing || status == .aiTranscribing) {
+        rainbowHue = 0
+        while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
+          withAnimation(.linear(duration: 0.1)) {
+            rainbowHue = (rainbowHue + 0.05).truncatingRemainder(dividingBy: 1.0)
+          }
+          try? await Task.sleep(for: .milliseconds(50))
         }
       }
   }
