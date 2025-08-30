@@ -36,14 +36,14 @@ struct TranscriptionIndicatorView: View {
   private var backgroundColor: Color {
     switch status {
     case .hidden: return Color.clear
-    case .optionKeyPressed: return Color.white
-    case .recording: return Color.white
-    case .aiRecording: return Color.white
-    case .transcribing: return Color.white
-    case .aiTranscribing: return Color.white
-    case .prewarming: return Color.white
-    case .needsModel: return Color.white
-    case .aiResponse: return Color.white.opacity(0.95)
+    case .optionKeyPressed: return Color.black.opacity(0.8)
+    case .recording: return transcribeBaseColor
+    case .aiRecording: return aiBaseColor
+    case .transcribing: return transcribeBaseColor
+    case .aiTranscribing: return aiBaseColor
+    case .prewarming: return transcribeBaseColor
+    case .needsModel: return Color.black.opacity(0.5)
+    case .aiResponse: return Color.black.opacity(0.5)
     }
   }
 
@@ -51,11 +51,11 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .hidden: return Color.clear
     case .optionKeyPressed: return Color.black.opacity(0.8)
-    case .recording: return transcribeBaseColor.opacity(0.9)
-    case .aiRecording: return aiBaseColor.opacity(0.9)
-    case .transcribing: return transcribeBaseColor.opacity(0.9)
-    case .aiTranscribing: return aiBaseColor.opacity(0.9)
-    case .prewarming: return transcribeBaseColor.opacity(0.9)
+    case .recording: return transcribeBaseColor
+    case .aiRecording: return aiBaseColor
+    case .transcribing: return transcribeBaseColor
+    case .aiTranscribing: return aiBaseColor
+    case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
     }
@@ -134,15 +134,47 @@ struct TranscriptionIndicatorView: View {
         let eyeSize: CGFloat = 2
         let eyeSpacing: CGFloat = isRecordingOrAIRecording ? containerWidth * 0.35 : 3
         
+        // Calculate eye color based on volume when recording
+        let averagePower = min(1, meter.averagePower * 5)  // Even more sensitive
+        let faceOpacity: Double = {
+          if isRecordingOrAIRecording {
+            // Direct mapping - instant response to volume
+            // Nearly invisible at 0, fully visible at very low volumes
+            if averagePower < 0.01 {
+              return 0  // Completely invisible when truly silent
+            } else {
+              return min(1.0, averagePower * 5)  // Aggressive scaling, reaches full at just 0.2 power
+            }
+          } else {
+            return 1.0
+          }
+        }()
+        
+        let eyeColor: Color = {
+          if status == .recording || status == .aiRecording {
+            // White eyes for recording modes
+            return Color.white
+          } else if status == .transcribing || status == .aiTranscribing || status == .prewarming {
+            // White eyes for transcribing states
+            return Color.white.opacity(0.8)
+          } else {
+            return Color.black
+          }
+        }()
+        
         ZStack {
-          // Eyes
+          // Eyes with volume-based glow
           HStack(spacing: eyeSpacing) {
             Circle()
-              .fill(Color.black)
+              .fill(eyeColor)
               .frame(width: eyeSize, height: eyeSize)
+              .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear, 
+                      radius: faceOpacity * 6)
             Circle()
-              .fill(Color.black)
+              .fill(eyeColor)
               .frame(width: eyeSize, height: eyeSize)
+              .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear, 
+                      radius: faceOpacity * 6)
           }
           .position(x: center.x, y: center.y - 2)
           
@@ -159,10 +191,13 @@ struct TranscriptionIndicatorView: View {
               control: CGPoint(x: center.x, y: yOffset + height)
             )
           }
-          .stroke(Color.black, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
+          .stroke(eyeColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
+          .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
+                  radius: faceOpacity * 5)
         }
+        .opacity(faceOpacity)
       }
-      .opacity((status == .transcribing || status == .aiTranscribing) ? 0.3 : 0.9)
+      .opacity((status == .transcribing || status == .aiTranscribing) ? 0.3 : 1.0)
     }
   }
   
@@ -177,28 +212,12 @@ struct TranscriptionIndicatorView: View {
           .stroke(strokeColor, lineWidth: 2)
           .blendMode(.normal)
       }
-      .overlay(alignment: .center) {
-        RoundedRectangle(cornerRadius: cornerRadius)
-          .fill(recordingFillColor.opacity(recordingFillOpacity))
-          .blur(radius: 2)
-          .blendMode(.screen)
-          .padding(6)
-      }
-      .overlay(alignment: .center) {
-        RoundedRectangle(cornerRadius: cornerRadius)
-          .fill(Color.white.opacity(whiteFillOpacity))
-          .blur(radius: 1)
-          .blendMode(.screen)
-          .frame(maxWidth: .infinity, alignment: .center)
-          .padding(7)
-      }
       .overlay {
         smileyFace
       }
       .cornerRadius(cornerRadius)
       .shadow(color: shadowColor1, radius: 6)
       .shadow(color: shadowColor2, radius: 12)
-      .animation(.interactiveSpring(), value: meter)
       .frame(
         width: isRecordingOrAIRecording ? expandedWidth : baseWidth,
         height: baseWidth
