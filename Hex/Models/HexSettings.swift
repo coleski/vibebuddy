@@ -24,6 +24,8 @@ struct HexSettings: Codable, Equatable {
 	var aiModifierKey: Key = .a // Key to press during recording to trigger AI mode
 	var aiResponseReadingSpeed: Double = 250.0 // Words per minute, 0 = never dismiss
 	var ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
+	var enableAIProcessing: Bool = false // Whether to enable AI text processing
+	var aiProcessingPrompt: String = "Fix grammar and formatting" // Prompt for AI text processing
 
 	// Define coding keys to match struct properties
 	enum CodingKeys: String, CodingKey {
@@ -46,6 +48,8 @@ struct HexSettings: Codable, Equatable {
 		case aiModifierKey
 		case aiResponseReadingSpeed
 		case ollamaSystemPrompt
+		case enableAIProcessing
+		case aiProcessingPrompt
 	}
 
 	init(
@@ -67,7 +71,9 @@ struct HexSettings: Codable, Equatable {
 		selectedOllamaModel: String = "llama3.2:1b",
 		aiModifierKey: Key = .a,
 		aiResponseReadingSpeed: Double = 250.0,
-		ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
+		ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions.",
+		enableAIProcessing: Bool = false,
+		aiProcessingPrompt: String = "Fix grammar and formatting"
 	) {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.hotkey = hotkey
@@ -88,6 +94,8 @@ struct HexSettings: Codable, Equatable {
 		self.aiModifierKey = aiModifierKey
 		self.aiResponseReadingSpeed = aiResponseReadingSpeed
 		self.ollamaSystemPrompt = ollamaSystemPrompt
+		self.enableAIProcessing = enableAIProcessing
+		self.aiProcessingPrompt = aiProcessingPrompt
 	}
 
 	// Custom decoder that handles missing fields
@@ -130,6 +138,10 @@ struct HexSettings: Codable, Equatable {
 		ollamaSystemPrompt =
 			try container.decodeIfPresent(String.self, forKey: .ollamaSystemPrompt) 
 				?? "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
+		enableAIProcessing =
+			try container.decodeIfPresent(Bool.self, forKey: .enableAIProcessing) ?? false
+		aiProcessingPrompt =
+			try container.decodeIfPresent(String.self, forKey: .aiProcessingPrompt) ?? "Fix grammar and formatting"
 	}
 }
 

@@ -345,8 +345,7 @@ struct TranscriptionIndicatorView: View {
       if status == .aiResponse, let response = aiResponse {
         AIResponseModalUIKit(
           response: response,
-          onDismiss: onDismissAI,
-          readingSpeed: readingSpeed
+          onDismiss: onDismissAI
         )
         .transition(AnyTransition.opacity.combined(with: AnyTransition.scale(scale: 0.95)))
       }
