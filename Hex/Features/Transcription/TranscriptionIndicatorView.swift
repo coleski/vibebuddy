@@ -39,8 +39,8 @@ struct TranscriptionIndicatorView: View {
     case .optionKeyPressed: return Color.black.opacity(0.8)
     case .recording: return transcribeBaseColor
     case .aiRecording: return aiBaseColor
-    case .transcribing: return Color.white
-    case .aiTranscribing: return Color.white
+    case .transcribing: return Color.white.opacity(0.4)  // Glass-like transparency
+    case .aiTranscribing: return Color.white.opacity(0.4)
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
@@ -53,8 +53,8 @@ struct TranscriptionIndicatorView: View {
     case .optionKeyPressed: return Color.black.opacity(0.8)
     case .recording: return transcribeBaseColor
     case .aiRecording: return aiBaseColor
-    case .transcribing: return Color.clear
-    case .aiTranscribing: return Color.clear
+    case .transcribing: return Color.clear  // No border
+    case .aiTranscribing: return Color.clear  // No border
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
@@ -182,31 +182,22 @@ struct TranscriptionIndicatorView: View {
           }
           .position(x: center.x, y: center.y - 2)
           
-          // Mouth - smile when recording, :O when transcribing
-          if status == .transcribing || status == .aiTranscribing {
-            // Hollow circle for surprised/thinking expression
-            Circle()
-              .stroke(eyeColor, lineWidth: 1.5)
-              .frame(width: 4, height: 4)
-              .position(x: center.x, y: center.y + 4)
-          } else {
-            // Regular smile
-            Path { path in
-              let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
-              let smileWidth = eyeTotalWidth * 0.75
-              let height: CGFloat = isRecordingOrAIRecording ? containerHeight * 0.15 : 2
-              let yOffset = center.y + (isRecordingOrAIRecording ? containerHeight * 0.15 : 3)
-              
-              path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
-              path.addQuadCurve(
-                to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
-                control: CGPoint(x: center.x, y: yOffset + height)
-              )
-            }
-            .stroke(eyeColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
-            .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
-                    radius: faceOpacity * 5)
+          // Smile for all states
+          Path { path in
+            let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
+            let smileWidth = eyeTotalWidth * 0.75
+            let height: CGFloat = isRecordingOrAIRecording ? containerHeight * 0.15 : 2
+            let yOffset = center.y + (isRecordingOrAIRecording ? containerHeight * 0.15 : 3)
+            
+            path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
+            path.addQuadCurve(
+              to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
+              control: CGPoint(x: center.x, y: yOffset + height)
+            )
           }
+          .stroke(eyeColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
+          .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
+                  radius: faceOpacity * 5)
         }
         .opacity(faceOpacity)
       }
@@ -218,16 +209,28 @@ struct TranscriptionIndicatorView: View {
   private var orbView: some View {
     let averagePower = min(1, meter.averagePower * 3)
     
-    Capsule()
-      .fill(backgroundColor.shadow(.inner(color: innerShadowColor, radius: 4)))
-      .overlay {
+    ZStack {
+      // Glass effect for transcribing states
+      if status == .transcribing || status == .aiTranscribing {
         Capsule()
-          .stroke(strokeColor, lineWidth: 2)
-          .blendMode(.normal)
+          .fill(.ultraThinMaterial)
+          .overlay {
+            Capsule()
+              .fill(Color.white.opacity(0.2))
+          }
+      } else {
+        // Regular fill for other states
+        Capsule()
+          .fill(backgroundColor.shadow(.inner(color: innerShadowColor, radius: 4)))
       }
-      .overlay {
-        smileyFace
-      }
+      
+      Capsule()
+        .stroke(strokeColor, lineWidth: 2)
+        .blendMode(.normal)
+    }
+    .overlay {
+      smileyFace
+    }
       .cornerRadius(cornerRadius)
       .shadow(color: shadowColor1, radius: 6)
       .shadow(color: shadowColor2, radius: 12)
@@ -271,8 +274,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .red.opacity(averagePower * 0.8)
     case .aiRecording: return aiBaseColor.opacity(averagePower * 0.8)
-    case .transcribing: return transcribeBaseColor.opacity(0.6)
-    case .aiTranscribing: return aiBaseColor.opacity(0.6)
+    case .transcribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.6)
+    case .aiTranscribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.6)
     default: return .clear
     }
   }
@@ -282,8 +285,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .orange.opacity(averagePower * 0.6)
     case .aiRecording: return .yellow.opacity(averagePower * 0.6)
-    case .transcribing: return transcribeBaseColor.opacity(0.4)
-    case .aiTranscribing: return aiBaseColor.opacity(0.4)
+    case .transcribing: return Color(hue: (rainbowHue + 0.2).truncatingRemainder(dividingBy: 1.0), saturation: 0.9, brightness: 0.9).opacity(0.4)
+    case .aiTranscribing: return Color(hue: (rainbowHue + 0.2).truncatingRemainder(dividingBy: 1.0), saturation: 0.9, brightness: 0.9).opacity(0.4)
     default: return .clear
     }
   }
@@ -292,8 +295,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .red.opacity(0.7)
     case .aiRecording: return aiBaseColor.opacity(0.7)
-    case .transcribing: return transcribeBaseColor.opacity(0.7)
-    case .aiTranscribing: return aiBaseColor.opacity(0.7)
+    case .transcribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.8)
+    case .aiTranscribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.8)
     default: return .clear
     }
   }
