@@ -39,8 +39,8 @@ struct TranscriptionIndicatorView: View {
     case .optionKeyPressed: return Color.black.opacity(0.8)
     case .recording: return transcribeBaseColor
     case .aiRecording: return aiBaseColor
-    case .transcribing: return Color.white.opacity(0.4)  // Glass-like transparency
-    case .aiTranscribing: return Color.white.opacity(0.4)
+    case .transcribing: return Color.white  // Solid white
+    case .aiTranscribing: return Color.white
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
@@ -157,11 +157,21 @@ struct TranscriptionIndicatorView: View {
             // White eyes for recording modes
             return Color.white
           } else if status == .transcribing || status == .aiTranscribing {
-            // Rainbow gradient for transcribing
-            return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9)
+            // Black eyes for transcribing
+            return Color.black
           } else if status == .prewarming {
             return Color.white.opacity(0.8)
           } else {
+            return Color.black
+          }
+        }()
+        
+        let mouthColor: Color = {
+          if status == .recording || status == .aiRecording {
+            // White mouth for recording modes
+            return Color.white
+          } else {
+            // Black mouth for all other states
             return Color.black
           }
         }()
@@ -195,7 +205,7 @@ struct TranscriptionIndicatorView: View {
               control: CGPoint(x: center.x, y: yOffset + height)
             )
           }
-          .stroke(eyeColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
+          .stroke(mouthColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
           .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
                   radius: faceOpacity * 5)
         }
@@ -209,25 +219,13 @@ struct TranscriptionIndicatorView: View {
   private var orbView: some View {
     let averagePower = min(1, meter.averagePower * 3)
     
-    ZStack {
-      // Glass effect for transcribing states
-      if status == .transcribing || status == .aiTranscribing {
+    Capsule()
+      .fill(backgroundColor.shadow(.inner(color: innerShadowColor, radius: 4)))
+      .overlay {
         Capsule()
-          .fill(.ultraThinMaterial)
-          .overlay {
-            Capsule()
-              .fill(Color.white.opacity(0.2))
-          }
-      } else {
-        // Regular fill for other states
-        Capsule()
-          .fill(backgroundColor.shadow(.inner(color: innerShadowColor, radius: 4)))
+          .stroke(strokeColor, lineWidth: 2)
+          .blendMode(.normal)
       }
-      
-      Capsule()
-        .stroke(strokeColor, lineWidth: 2)
-        .blendMode(.normal)
-    }
     .overlay {
       smileyFace
     }
@@ -274,8 +272,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .red.opacity(averagePower * 0.8)
     case .aiRecording: return aiBaseColor.opacity(averagePower * 0.8)
-    case .transcribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.6)
-    case .aiTranscribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.6)
+    case .transcribing: return .clear  // No shadow
+    case .aiTranscribing: return .clear
     default: return .clear
     }
   }
@@ -285,8 +283,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .orange.opacity(averagePower * 0.6)
     case .aiRecording: return .yellow.opacity(averagePower * 0.6)
-    case .transcribing: return Color(hue: (rainbowHue + 0.2).truncatingRemainder(dividingBy: 1.0), saturation: 0.9, brightness: 0.9).opacity(0.4)
-    case .aiTranscribing: return Color(hue: (rainbowHue + 0.2).truncatingRemainder(dividingBy: 1.0), saturation: 0.9, brightness: 0.9).opacity(0.4)
+    case .transcribing: return .clear  // No shadow
+    case .aiTranscribing: return .clear
     default: return .clear
     }
   }
@@ -295,8 +293,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .red.opacity(0.7)
     case .aiRecording: return aiBaseColor.opacity(0.7)
-    case .transcribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.8)
-    case .aiTranscribing: return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.9).opacity(0.8)
+    case .transcribing: return .clear  // No glow
+    case .aiTranscribing: return .clear
     default: return .clear
     }
   }
