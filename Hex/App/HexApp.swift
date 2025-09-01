@@ -25,12 +25,7 @@ struct HexApp: App {
 				NSApplication.shared.terminate(nil)
 			}.keyboardShortcut("q")
 		} label: {
-			let image: NSImage = {
-				let ratio = $0.size.height / $0.size.width
-				$0.size.height = 18
-				$0.size.width = 18 / ratio
-				return $0
-			}(NSImage(named: "HexIcon")!)
+			let image = SmileyFaceIcon.createIcon(size: CGSize(width: 22, height: 22))
 			Image(nsImage: image)
 		}
 
