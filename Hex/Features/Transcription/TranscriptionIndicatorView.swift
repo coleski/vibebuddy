@@ -12,6 +12,25 @@ import SwiftUI
 struct TranscriptionIndicatorView: View {
   @ObserveInjection var inject
   
+  enum FaceExpression: CaseIterable {
+    case surprise      // :O - circle mouth
+    case smile         // :) - normal smile
+    case thinking      // ... - animated ellipsis
+    case skeptical     // -_- - squinty eyes, horizontal mouth (rare)
+    
+    static func random() -> FaceExpression {
+      // Make skeptical rare (5% chance)
+      let randomValue = Int.random(in: 0..<100)
+      if randomValue < 5 {
+        return .skeptical
+      } else {
+        // Equal chance for the other three
+        let otherFaces: [FaceExpression] = [.surprise, .smile, .thinking]
+        return otherFaces.randomElement()!
+      }
+    }
+  }
+  
   enum Status {
     case hidden
     case optionKeyPressed
@@ -86,6 +105,7 @@ struct TranscriptionIndicatorView: View {
   @State var transcribeEffect = 0
   @State var ellipsisFrame = 0
   @State var rainbowHue: Double = 0
+  @State var currentFaceExpression: FaceExpression = .surprise
   
   // Helper computed properties to simplify complex expressions
   private var isRecordingOrAIRecording: Bool {
@@ -134,7 +154,7 @@ struct TranscriptionIndicatorView: View {
         
         // Keep eye size constant, only vary spacing
         let eyeSize: CGFloat = 2
-        let eyeSpacing: CGFloat = isRecordingOrAIRecording ? containerWidth * 0.35 : 3
+        let eyeSpacing: CGFloat = containerWidth * 0.35
         
         // Calculate eye color based on volume when recording
         let averagePower = min(1, meter.averagePower * 5)  // Even more sensitive
@@ -157,8 +177,8 @@ struct TranscriptionIndicatorView: View {
             // White eyes for recording modes
             return Color.white
           } else if status == .transcribing || status == .aiTranscribing {
-            // Black eyes for transcribing
-            return Color.black
+            // Darker, more saturated rainbow eyes for transcribing
+            return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.6).opacity(0.85)
           } else if status == .prewarming {
             return Color.white.opacity(0.8)
           } else {
@@ -170,6 +190,9 @@ struct TranscriptionIndicatorView: View {
           if status == .recording || status == .aiRecording {
             // White mouth for recording modes
             return Color.white
+          } else if status == .transcribing || status == .aiTranscribing {
+            // Darker, more saturated rainbow mouth for transcribing modes
+            return Color(hue: rainbowHue, saturation: 0.9, brightness: 0.6).opacity(0.85)
           } else {
             // Black mouth for all other states
             return Color.black
@@ -178,36 +201,105 @@ struct TranscriptionIndicatorView: View {
         
         ZStack {
           // Eyes with volume-based glow
-          HStack(spacing: eyeSpacing) {
-            Circle()
-              .fill(eyeColor)
-              .frame(width: eyeSize, height: eyeSize)
-              .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear, 
-                      radius: faceOpacity * 6)
-            Circle()
-              .fill(eyeColor)
-              .frame(width: eyeSize, height: eyeSize)
-              .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear, 
-                      radius: faceOpacity * 6)
+          if (status == .transcribing || status == .aiTranscribing) && currentFaceExpression == .skeptical {
+            // Squinty eyes for skeptical face -_-
+            HStack(spacing: eyeSpacing) {
+              Rectangle()
+                .fill(eyeColor)
+                .frame(width: eyeSize * 2, height: 0.5)
+              Rectangle()
+                .fill(eyeColor)
+                .frame(width: eyeSize * 2, height: 0.5)
+            }
+            .position(x: center.x, y: center.y - 2)
+          } else {
+            // Normal circular eyes
+            HStack(spacing: eyeSpacing) {
+              Circle()
+                .fill(eyeColor)
+                .frame(width: eyeSize, height: eyeSize)
+                .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : (status == .transcribing || status == .aiTranscribing) ? eyeColor.opacity(0.4) : .clear, 
+                        radius: (status == .transcribing || status == .aiTranscribing) ? 5 : faceOpacity * 6)
+              Circle()
+                .fill(eyeColor)
+                .frame(width: eyeSize, height: eyeSize)
+                .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : (status == .transcribing || status == .aiTranscribing) ? eyeColor.opacity(0.4) : .clear, 
+                        radius: (status == .transcribing || status == .aiTranscribing) ? 5 : faceOpacity * 6)
+            }
+            .position(x: center.x, y: center.y - 2)
           }
-          .position(x: center.x, y: center.y - 2)
           
-          // Smile for all states
-          Path { path in
-            let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
-            let smileWidth = eyeTotalWidth * 0.75
-            let height: CGFloat = isRecordingOrAIRecording ? containerHeight * 0.15 : 2
-            let yOffset = center.y + (isRecordingOrAIRecording ? containerHeight * 0.15 : 3)
-            
-            path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
-            path.addQuadCurve(
-              to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
-              control: CGPoint(x: center.x, y: yOffset + height)
-            )
+          // Mouth - different expressions for transcribing, smile for other states
+          if status == .transcribing || status == .aiTranscribing {
+            // Show different face expressions based on random selection
+            switch currentFaceExpression {
+            case .surprise:
+              // Circle mouth :O with glow
+              Circle()
+                .stroke(mouthColor, lineWidth: 1.5)
+                .frame(width: 4, height: 4)
+                .shadow(color: mouthColor.opacity(0.5), radius: 5)
+                .shadow(color: mouthColor.opacity(0.3), radius: 8)
+                .position(x: center.x, y: center.y + containerHeight * 0.15)
+              
+            case .smile:
+              // Normal smile :)
+              Path { path in
+                let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
+                let smileWidth = eyeTotalWidth * 0.75
+                let height: CGFloat = containerHeight * 0.15
+                let yOffset = center.y + containerHeight * 0.15
+                
+                path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
+                path.addQuadCurve(
+                  to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
+                  control: CGPoint(x: center.x, y: yOffset + height)
+                )
+              }
+              .stroke(mouthColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+              
+            case .thinking:
+              // Animated ellipsis ... with glow
+              HStack(spacing: 2) {
+                ForEach(0..<3) { index in
+                  Circle()
+                    .fill(mouthColor)
+                    .frame(width: 1.5, height: 1.5)
+                    .opacity(index <= ellipsisFrame ? 1.0 : 0.3)
+                    .shadow(color: mouthColor.opacity(index <= ellipsisFrame ? 0.4 : 0), radius: 3)
+                }
+              }
+              .position(x: center.x, y: center.y + containerHeight * 0.15)
+              
+            case .skeptical:
+              // Horizontal line mouth with squinty eyes handled separately
+              Path { path in
+                let mouthWidth: CGFloat = eyeSpacing * 0.5
+                let yOffset = center.y + containerHeight * 0.15
+                
+                path.move(to: CGPoint(x: center.x - mouthWidth/2, y: yOffset))
+                path.addLine(to: CGPoint(x: center.x + mouthWidth/2, y: yOffset))
+              }
+              .stroke(mouthColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            }
+          } else {
+            // Smile for other states
+            Path { path in
+              let eyeTotalWidth = (eyeSize * 2) + eyeSpacing
+              let smileWidth = eyeTotalWidth * 0.75
+              let height: CGFloat = containerHeight * 0.15
+              let yOffset = center.y + containerHeight * 0.15
+              
+              path.move(to: CGPoint(x: center.x - smileWidth/2, y: yOffset))
+              path.addQuadCurve(
+                to: CGPoint(x: center.x + smileWidth/2, y: yOffset),
+                control: CGPoint(x: center.x, y: yOffset + height)
+              )
+            }
+            .stroke(mouthColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
+                    radius: faceOpacity * 5)
           }
-          .stroke(mouthColor, style: StrokeStyle(lineWidth: isRecordingOrAIRecording ? 2 : 1.5, lineCap: .round))
-          .shadow(color: isRecordingOrAIRecording ? Color.white.opacity(0.8) : .clear,
-                  radius: faceOpacity * 5)
         }
         .opacity(faceOpacity)
       }
@@ -244,6 +336,10 @@ struct TranscriptionIndicatorView: View {
       .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
       .compositingGroup()
       .task(id: status == .transcribing || status == .aiTranscribing) {
+        // Randomize face expression when entering transcribing state
+        if status == .transcribing || status == .aiTranscribing {
+          currentFaceExpression = FaceExpression.random()
+        }
         while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
           transcribeEffect += 1
           try? await Task.sleep(for: .seconds(0.25))
@@ -252,7 +348,7 @@ struct TranscriptionIndicatorView: View {
       .task(id: status == .transcribing || status == .aiTranscribing) {
         ellipsisFrame = 0
         while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
-          ellipsisFrame = (ellipsisFrame + 1) % 3
+          ellipsisFrame = (ellipsisFrame + 1) % 4  // Changed to 4 for better animation
           try? await Task.sleep(for: .milliseconds(300))
         }
       }
@@ -272,8 +368,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .red.opacity(averagePower * 0.8)
     case .aiRecording: return aiBaseColor.opacity(averagePower * 0.8)
-    case .transcribing: return .clear  // No shadow
-    case .aiTranscribing: return .clear
+    case .transcribing: return Color(hue: rainbowHue, saturation: 1.0, brightness: 1.0).opacity(averagePower * 0.8)  // Rainbow glow with volume response
+    case .aiTranscribing: return Color(hue: rainbowHue, saturation: 1.0, brightness: 1.0).opacity(averagePower * 0.8)  // Rainbow glow with volume response
     default: return .clear
     }
   }
@@ -283,8 +379,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .orange.opacity(averagePower * 0.6)
     case .aiRecording: return .yellow.opacity(averagePower * 0.6)
-    case .transcribing: return .clear  // No shadow
-    case .aiTranscribing: return .clear
+    case .transcribing: return Color(hue: (rainbowHue + 0.15).truncatingRemainder(dividingBy: 1.0), saturation: 0.9, brightness: 1.0).opacity(averagePower * 0.6)  // Secondary rainbow with volume
+    case .aiTranscribing: return Color(hue: (rainbowHue + 0.15).truncatingRemainder(dividingBy: 1.0), saturation: 0.9, brightness: 1.0).opacity(averagePower * 0.6)  // Secondary rainbow with volume
     default: return .clear
     }
   }
@@ -293,8 +389,8 @@ struct TranscriptionIndicatorView: View {
     switch status {
     case .recording: return .red.opacity(0.7)
     case .aiRecording: return aiBaseColor.opacity(0.7)
-    case .transcribing: return .clear  // No glow
-    case .aiTranscribing: return .clear
+    case .transcribing: return Color(hue: rainbowHue, saturation: 1.0, brightness: 1.0).opacity(0.7)  // Rainbow glow matching recording intensity
+    case .aiTranscribing: return Color(hue: rainbowHue, saturation: 1.0, brightness: 1.0).opacity(0.7)  // Rainbow glow matching recording intensity
     default: return .clear
     }
   }
