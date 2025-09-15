@@ -106,6 +106,7 @@ struct TranscriptionIndicatorView: View {
   @State var ellipsisFrame = 0
   @State var rainbowHue: Double = 0
   @State var currentFaceExpression: FaceExpression = .surprise
+  @State var waveRotation: Double = 0
   
   // Helper computed properties to simplify complex expressions
   private var isRecordingOrAIRecording: Bool {
@@ -314,13 +315,44 @@ struct TranscriptionIndicatorView: View {
     Capsule()
       .fill(backgroundColor.shadow(.inner(color: innerShadowColor, radius: 4)))
       .overlay {
-        Capsule()
-          .stroke(strokeColor, lineWidth: 2)
-          .blendMode(.normal)
+        // Rainbow wave border for transcribing states
+        if status == .transcribing || status == .aiTranscribing {
+          ZStack {
+            // Multiple layers for tapered effect
+            ForEach(0..<8) { layer in
+              let progress = Double(layer) / 7.0
+              let opacity = pow(1.0 - progress, 2.0) // Exponential fade
+              let lineWidth = 3.0 * (1.0 - progress * 0.7) // Tapering width
+              
+              Capsule()
+                .stroke(
+                  AngularGradient(
+                    gradient: Gradient(stops: [
+                      .init(color: Color(hue: (rainbowHue + progress * 0.1).truncatingRemainder(dividingBy: 1.0), saturation: 1.0, brightness: 1.0).opacity(opacity), location: 0),
+                      .init(color: Color(hue: (rainbowHue + 0.05 + progress * 0.1).truncatingRemainder(dividingBy: 1.0), saturation: 1.0, brightness: 1.0).opacity(opacity * 0.8), location: 0.05),
+                      .init(color: Color(hue: (rainbowHue + 0.1 + progress * 0.1).truncatingRemainder(dividingBy: 1.0), saturation: 1.0, brightness: 1.0).opacity(opacity * 0.5), location: 0.15),
+                      .init(color: Color(hue: (rainbowHue + 0.15 + progress * 0.1).truncatingRemainder(dividingBy: 1.0), saturation: 1.0, brightness: 1.0).opacity(opacity * 0.2), location: 0.20),
+                      .init(color: Color.clear, location: 0.25), // Fade complete at 25% of the circle
+                      .init(color: Color.clear, location: 1.0)
+                    ]),
+                    center: .center,
+                    startAngle: Angle(degrees: waveRotation - Double(layer) * 2),
+                    endAngle: Angle(degrees: waveRotation + 360 - Double(layer) * 2)
+                  ),
+                  lineWidth: lineWidth
+                )
+                .blendMode(.plusLighter)
+            }
+          }
+        } else {
+          Capsule()
+            .stroke(strokeColor, lineWidth: 2)
+            .blendMode(.normal)
+        }
       }
-    .overlay {
-      smileyFace
-    }
+      .overlay {
+        smileyFace
+      }
       .cornerRadius(cornerRadius)
       .shadow(color: shadowColor1, radius: 6)
       .shadow(color: shadowColor2, radius: 12)
@@ -328,13 +360,13 @@ struct TranscriptionIndicatorView: View {
         width: isRecordingOrAIRecording ? expandedWidth : baseWidth,
         height: baseWidth
       )
-      .opacity(shouldHideOrb ? 0 : 1)
-      .scaleEffect(shouldHideOrb ? 0.0 : 1)
-      .blur(radius: shouldHideOrb ? 4 : 0)
-      .animation(.bouncy(duration: 0.3), value: status)
-      .changeEffect(.glow(color: glowColor, radius: 10), value: status)
-      .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
-      .compositingGroup()
+    .opacity(shouldHideOrb ? 0 : 1)
+    .scaleEffect(shouldHideOrb ? 0.0 : 1)
+    .blur(radius: shouldHideOrb ? 4 : 0)
+    .animation(.bouncy(duration: 0.3), value: status)
+    .changeEffect(.glow(color: glowColor, radius: 10), value: status)
+    .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
+    .compositingGroup()
       .task(id: status == .transcribing || status == .aiTranscribing) {
         // Randomize face expression when entering transcribing state
         if status == .transcribing || status == .aiTranscribing {
@@ -359,6 +391,15 @@ struct TranscriptionIndicatorView: View {
             rainbowHue = (rainbowHue + 0.05).truncatingRemainder(dividingBy: 1.0)
           }
           try? await Task.sleep(for: .milliseconds(50))
+        }
+      }
+      .task(id: status == .transcribing || status == .aiTranscribing) {
+        waveRotation = 0
+        while (status == .transcribing || status == .aiTranscribing), !Task.isCancelled {
+          withAnimation(.linear(duration: 0.02)) {
+            waveRotation = (waveRotation + 3).truncatingRemainder(dividingBy: 360)
+          }
+          try? await Task.sleep(for: .milliseconds(20))
         }
       }
   }

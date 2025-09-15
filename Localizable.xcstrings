@@ -7,6 +7,16 @@
     "(Not downloaded)" : {
 
     },
+    "%lld  %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld  %2$@"
+          }
+        }
+      }
+    },
     "%lldGB RAM required" : {
 
     },
@@ -62,6 +72,12 @@
     "AI Modifier (press with hotkey to trigger AI)" : {
 
     },
+    "AI Processing" : {
+
+    },
+    "Apply AI formatting to all transcriptions before pasting" : {
+
+    },
     "Are you sure you want to delete all transcripts? This action cannot be undone." : {
       "comment" : "Delete transcript history confirm",
       "localizations" : {
@@ -72,9 +88,6 @@
           }
         }
       }
-    },
-    "Auto-dismiss at %lld WPM" : {
-
     },
     "Become a Sponsor" : {
 
@@ -221,6 +234,9 @@
         }
       }
     },
+    "Dismissal Speed %lld WPM" : {
+
+    },
     "Download" : {
 
     },
@@ -287,6 +303,12 @@
       }
     },
     "Error: %@" : {
+
+    },
+    "Examples: 'Add proper punctuation and capitalization', 'Format as bullet points', 'Convert to title case'" : {
+
+    },
+    "Formatting Instructions" : {
 
     },
     "General" : {
@@ -366,6 +388,9 @@
     "Launch Ollama" : {
 
     },
+    "Loading ports..." : {
+
+    },
     "Maximum History Entries" : {
 
     },
@@ -403,9 +428,6 @@
         }
       }
     },
-    "Never auto-dismiss" : {
-
-    },
     "No models found." : {
       "comment" : "Replacement text in transcription model section when no available models are found",
       "extractionState" : "stale",
@@ -417,6 +439,9 @@
           }
         }
       }
+    },
+    "No ports in use" : {
+
     },
     "No Transcriptions" : {
       "comment" : "Empty history headline.",
@@ -503,6 +528,9 @@
           }
         }
       }
+    },
+    "Process Transcriptions with AI" : {
+
     },
     "Quit" : {
 
@@ -666,6 +694,9 @@
 
     },
     "System Prompt" : {
+
+    },
+    "The AI will format your transcriptions according to these instructions before pasting." : {
 
     },
     "Transcription history is currently disabled." : {
