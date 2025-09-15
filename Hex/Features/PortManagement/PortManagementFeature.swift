@@ -21,6 +21,8 @@ struct PortManagementFeature {
   
   enum Action {
     case refresh
+    case startAutoRefresh
+    case stopAutoRefresh
     case processesLoaded([ProcessInfo])
     case killProcess(ProcessInfo)
     case processKilled(ProcessInfo)
@@ -31,11 +33,12 @@ struct PortManagementFeature {
   @Dependency(\.portManagementClient) var portManagementClient
   @Dependency(\.continuousClock) var clock
   
+  private enum CancelID { case autoRefresh }
+  
   var body: some ReducerOf<Self> {
     Reduce { state, action in
       switch action {
       case .refresh:
-        state.isLoading = true
         state.errorMessage = nil
         
         return .run { send in
@@ -46,6 +49,20 @@ struct PortManagementFeature {
             await send(.errorOccurred(error.localizedDescription))
           }
         }
+        
+      case .startAutoRefresh:
+        print("[PortManagement] Starting auto-refresh")
+        return .run { send in
+          await send(.refresh)
+          for await _ in clock.timer(interval: .seconds(1)) {
+            await send(.refresh)
+          }
+        }
+        .cancellable(id: CancelID.autoRefresh)
+        
+      case .stopAutoRefresh:
+        print("[PortManagement] Stopping auto-refresh")
+        return .cancel(id: CancelID.autoRefresh)
         
       case let .processesLoaded(processes):
         state.processes = processes

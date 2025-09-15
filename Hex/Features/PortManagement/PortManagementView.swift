@@ -6,15 +6,7 @@ struct PortManagementView: View {
   
   var body: some View {
     Group {
-      if store.isLoading {
-        Button(action: {}) {
-          Text("Loading ports...")
-            .font(.caption)
-            .foregroundColor(.secondary)
-        }
-        .buttonStyle(.plain)
-        .disabled(true)
-      } else if !store.processes.isEmpty {
+      if !store.processes.isEmpty {
         ForEach(store.processes) { process in
           Button(action: { store.send(.killProcess(process)) }) {
             Text("\(process.port)  \(process.processName)")
@@ -45,7 +37,10 @@ struct PortManagementView: View {
       Divider()
     }
     .onAppear {
-      store.send(.refresh)
+      store.send(.startAutoRefresh)
+    }
+    .onDisappear {
+      store.send(.stopAutoRefresh)
     }
   }
 }

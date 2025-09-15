@@ -17,7 +17,7 @@ struct HexApp: App {
   
 	var body: some Scene {
 		MenuBarExtra {
-			mainMenuContent
+			MenuContent()
 		} label: {
 			let image = SmileyFaceIcon.createIcon(size: CGSize(width: 22, height: 22))
 			Image(nsImage: image)
@@ -35,17 +35,21 @@ struct HexApp: App {
 				}
 			}
 	}
-	
-	@ViewBuilder
-	private var mainMenuContent: some View {
-		PortManagementView(store: Self.portStore)
+}
+
+// Separate view struct to ensure proper state management
+struct MenuContent: View {
+	var body: some View {
+		PortManagementView(store: HexApp.portStore)
 		
 		Divider()
 		
 		CheckForUpdatesView()
 		
 		Button("Settings...") {
-			appDelegate.presentSettingsView()
+			if let delegate = NSApp.delegate as? HexAppDelegate {
+				delegate.presentSettingsView()
+			}
 		}.keyboardShortcut(",")
 		
 		Divider()
