@@ -144,11 +144,13 @@ func pauseAllMediaApplications() async -> [String] {
       try
         set appName to "VLC"
         if application appName is running then
-          tell application appName to set isVLCplaying to playing
+          tell application appName
+            set isVLCplaying to playing
             if isVLCplaying then
-              tell application appName to play
+              pause
               set end of pausedPlayers to appName
             end if
+          end tell
         end if
       end try
       """)

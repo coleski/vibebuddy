@@ -8,7 +8,7 @@ struct HexSettings: Codable, Equatable {
 	var soundEffectsEnabled: Bool = true
 	var hotkey: HotKey = .init(key: nil, modifiers: [.option])
 	var openOnLogin: Bool = false
-	var showDockIcon: Bool = true
+	var showDockIcon: Bool = false
 	var selectedModel: String = "openai_whisper-large-v3-v20240930"
 	var useClipboardPaste: Bool = true
 	var preventSystemSleep: Bool = true
@@ -56,7 +56,7 @@ struct HexSettings: Codable, Equatable {
 		soundEffectsEnabled: Bool = true,
 		hotkey: HotKey = .init(key: nil, modifiers: [.option]),
 		openOnLogin: Bool = false,
-		showDockIcon: Bool = true,
+		showDockIcon: Bool = false,
 		selectedModel: String = "openai_whisper-large-v3-v20240930",
 		useClipboardPaste: Bool = true,
 		preventSystemSleep: Bool = true,
@@ -109,7 +109,7 @@ struct HexSettings: Codable, Equatable {
 			try container.decodeIfPresent(HotKey.self, forKey: .hotkey)
 				?? .init(key: nil, modifiers: [.option])
 		openOnLogin = try container.decodeIfPresent(Bool.self, forKey: .openOnLogin) ?? false
-		showDockIcon = try container.decodeIfPresent(Bool.self, forKey: .showDockIcon) ?? true
+		showDockIcon = try container.decodeIfPresent(Bool.self, forKey: .showDockIcon) ?? false
 		selectedModel =
 			try container.decodeIfPresent(String.self, forKey: .selectedModel)
 				?? "openai_whisper-large-v3-v20240930"

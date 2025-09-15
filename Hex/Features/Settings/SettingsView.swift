@@ -202,11 +202,12 @@ struct SettingsView: View {
 					Image(systemName: "arrow.right.circle")
 				}
 
-				Label {
-					Toggle("Show Dock Icon", isOn: $store.hexSettings.showDockIcon)
-				} icon: {
-					Image(systemName: "dock.rectangle")
-				}
+				// Dock icon is now always hidden - menu bar only mode
+				// Label {
+				// 	Toggle("Show Dock Icon", isOn: $store.hexSettings.showDockIcon)
+				// } icon: {
+				// 	Image(systemName: "dock.rectangle")
+				// }
 
 				Label {
 					Toggle("Use clipboard to insert", isOn: $store.hexSettings.useClipboardPaste)

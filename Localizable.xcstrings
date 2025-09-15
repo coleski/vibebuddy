@@ -624,6 +624,7 @@
     },
     "Show Dock Icon" : {
       "comment" : "label for general setting whether to show the dock icon or not.",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
