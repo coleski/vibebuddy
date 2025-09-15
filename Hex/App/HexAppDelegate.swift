@@ -14,6 +14,9 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 			print("TESTING")
 			return
 		}
+		
+		// Store self in static property for menu access
+		HexApp.sharedDelegate = self
 
 		Task {
 			await soundEffect.preloadSounds()
@@ -36,8 +39,9 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 
 		// Then present main views
 		presentMainView()
-		presentSettingsView()
-		NSApp.activate(ignoringOtherApps: true)
+		// Don't show settings automatically on startup
+		// presentSettingsView()
+		// NSApp.activate(ignoringOtherApps: true)
 	}
 
 	func presentMainView() {
@@ -54,7 +58,14 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 	func presentSettingsView() {
 		if let settingsWindow = settingsWindow {
 			settingsWindow.makeKeyAndOrderFront(nil)
+			settingsWindow.orderFrontRegardless()
 			NSApp.activate(ignoringOtherApps: true)
+			
+			// If window was closed, recreate it
+			if !settingsWindow.isVisible {
+				self.settingsWindow = nil
+				presentSettingsView()
+			}
 			return
 		}
 
@@ -67,10 +78,10 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 		)
 		settingsWindow.titleVisibility = .visible
 		settingsWindow.contentView = NSHostingView(rootView: settingsView)
-		settingsWindow.makeKeyAndOrderFront(nil)
 		settingsWindow.isReleasedWhenClosed = false
 		settingsWindow.center()
-        settingsWindow.toolbarStyle = NSWindow.ToolbarStyle.unified
+		settingsWindow.toolbarStyle = NSWindow.ToolbarStyle.unified
+		settingsWindow.makeKeyAndOrderFront(nil)
 		NSApp.activate(ignoringOtherApps: true)
 		self.settingsWindow = settingsWindow
 	}

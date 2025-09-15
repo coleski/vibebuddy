@@ -12,6 +12,9 @@ struct HexApp: App {
 	static let portStore = Store(initialState: PortManagementFeature.State()) {
 		PortManagementFeature()
 	}
+	
+	// Store delegate as static after initialization
+	static var sharedDelegate: HexAppDelegate?
 
 	@NSApplicationDelegateAdaptor(HexAppDelegate.self) var appDelegate
   
@@ -30,7 +33,9 @@ struct HexApp: App {
 					CheckForUpdatesView()
 
 					Button("Settings...") {
-						appDelegate.presentSettingsView()
+						if let delegate = HexApp.sharedDelegate {
+							delegate.presentSettingsView()
+						}
 					}.keyboardShortcut(",")
 				}
 			}
@@ -47,7 +52,7 @@ struct MenuContent: View {
 		CheckForUpdatesView()
 		
 		Button("Settings...") {
-			if let delegate = NSApp.delegate as? HexAppDelegate {
+			if let delegate = HexApp.sharedDelegate {
 				delegate.presentSettingsView()
 			}
 		}.keyboardShortcut(",")
