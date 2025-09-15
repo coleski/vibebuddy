@@ -8,22 +8,16 @@ struct HexApp: App {
 	static let appStore = Store(initialState: AppFeature.State()) {
 		AppFeature()
 	}
+	
+	static let portStore = Store(initialState: PortManagementFeature.State()) {
+		PortManagementFeature()
+	}
 
 	@NSApplicationDelegateAdaptor(HexAppDelegate.self) var appDelegate
   
 	var body: some Scene {
 		MenuBarExtra {
-			CheckForUpdatesView()
-
-			Button("Settings...") {
-				appDelegate.presentSettingsView()
-			}.keyboardShortcut(",")
-			
-			Divider()
-			
-			Button("Quit") {
-				NSApplication.shared.terminate(nil)
-			}.keyboardShortcut("q")
+			mainMenuContent
 		} label: {
 			let image = SmileyFaceIcon.createIcon(size: CGSize(width: 22, height: 22))
 			Image(nsImage: image)
@@ -40,5 +34,24 @@ struct HexApp: App {
 					}.keyboardShortcut(",")
 				}
 			}
+	}
+	
+	@ViewBuilder
+	private var mainMenuContent: some View {
+		PortManagementView(store: Self.portStore)
+		
+		Divider()
+		
+		CheckForUpdatesView()
+		
+		Button("Settings...") {
+			appDelegate.presentSettingsView()
+		}.keyboardShortcut(",")
+		
+		Divider()
+		
+		Button("Quit") {
+			NSApplication.shared.terminate(nil)
+		}.keyboardShortcut("q")
 	}
 }
