@@ -1,9 +1,10 @@
-# Buddy
+# vibebuddy
 
-This is your vibecoding buddy. His name is Buddy. He's a great listener.
+this is your vibecoding buddy. his name is Buddy. he's a great listener.
 
-- Press **OPTION** for him to listen
-- Press **OPTION + A** for him to respond  
-- Click on his face to kill a program
+- press **OPTION** for him to listen
+- press **OPTION + A** for him to respond  
+- click on his face to kill a program
 
-Inspired
+forked from kitlangton's Hex
+inspired by kagehq's Port Kill
