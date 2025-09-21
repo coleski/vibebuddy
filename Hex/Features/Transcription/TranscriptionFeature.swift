@@ -365,9 +365,12 @@ private extension TranscriptionFeature {
       return Date().timeIntervalSince(startTime) > state.hexSettings.minimumKeyTime
     }()
 
-      guard (durationIsLongEnough && state.hexSettings.hotkey.key == nil) else {
-      // If the user recorded for less than minimumKeyTime, just discard
-      // unless the hotkey includes a regular key, in which case, we can assume it was intentional
+    // For modifier-only hotkeys, enforce minimum duration
+    // For hotkeys with a regular key, always proceed (intentional press)
+    let shouldProceed = durationIsLongEnough || state.hexSettings.hotkey.key != nil
+
+    guard shouldProceed else {
+      // Recording was too short for a modifier-only hotkey
       print("Recording was too short, discarding")
       return .run { _ in
         _ = await recording.stopRecording()
