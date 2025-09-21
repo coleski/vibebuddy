@@ -271,6 +271,49 @@ struct HexTests {
         )
     }
 
+    // MARK: - Test Cmd+Ctrl+9 specifically (the user's issue)
+
+    @Test
+    func pressAndHold_cmdCtrl9_withoutDoubleTap() throws {
+        // Test Cmd+Ctrl+9 without double-tap mode - should start recording on press
+        runScenario(
+            hotkey: HotKey(key: .nine, modifiers: [.command, .control]),
+            steps: [
+                // Press Cmd+Ctrl+9 - should start recording immediately
+                ScenarioStep(time: 0.0, key: .nine, modifiers: [.command, .control], expectedOutput: .startRecording, expectedIsMatched: true),
+                // Hold for 6 seconds (simulating user's reported behavior)
+                ScenarioStep(time: 6.0, key: .nine, modifiers: [.command, .control], expectedOutput: nil, expectedIsMatched: true),
+                // Release - should stop recording
+                ScenarioStep(time: 6.1, key: nil, modifiers: [.command, .control], expectedOutput: .stopRecording, expectedIsMatched: false),
+            ]
+        )
+    }
+
+    @Test
+    func pressAndHold_cmdCtrl9_withDoubleTap() throws {
+        // Test Cmd+Ctrl+9 WITH double-tap mode - should NOT start on hold
+        var processor = withDependencies {
+            $0.date.now = Date(timeIntervalSince1970: 0)
+        } operation: {
+            HotKeyProcessor(hotkey: HotKey(key: .nine, modifiers: [.command, .control]), useDoubleTapOnly: true)
+        }
+
+        // First press - should NOT start recording (double-tap mode)
+        let keyEvent1 = KeyEvent(key: .nine, modifiers: Modifiers(modifiers: [.command, .control]), eventType: .keyDown, keyCode: 25)
+        let output1 = processor.process(keyEvent: keyEvent1)
+        #expect(output1 == nil)  // No output on first press in double-tap mode
+
+        // Hold for 6 seconds - still nothing
+        processor = withDependencies {
+            $0.date.now = Date(timeIntervalSince1970: 6.0)
+        } operation: {
+            processor
+        }
+        let keyEvent2 = KeyEvent(key: .nine, modifiers: Modifiers(modifiers: [.command, .control]), eventType: .keyDown, keyCode: 25)
+        let output2 = processor.process(keyEvent: keyEvent2)
+        #expect(output2 == nil)  // Still nothing
+    }
+
     // MARK: - Edge Cases
 
     // Tests that after pressing a key with option, releasing the key but keeping option pressed

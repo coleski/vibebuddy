@@ -63,7 +63,16 @@ public struct HotKeyProcessor {
     }
 
     public mutating func process(keyEvent: KeyEvent) -> Output? {
-        
+        // Debug logging for Cmd+Ctrl+9
+        if keyEvent.key == .nine && keyEvent.modifiers.contains(.command) && keyEvent.modifiers.contains(.control) {
+            print("[HotKeyProcessor] Cmd+Ctrl+9 event:")
+            print("  State: \(state)")
+            print("  Configured hotkey: \(hotkey.key?.toString ?? "nil") + \(hotkey.modifiers)")
+            print("  UseDoubleTapOnly: \(useDoubleTapOnly)")
+            print("  isDirty: \(isDirty)")
+            print("  Event matches hotkey: \(chordMatchesHotkey(keyEvent))")
+        }
+
         // 1) ESC => immediate cancel
         if keyEvent.key == .escape {
             print("ESCAPE HIT IN STATE: \(state)")
@@ -84,7 +93,11 @@ public struct HotKeyProcessor {
 
         // 3) Matching chord => handle as "press"
         if chordMatchesHotkey(keyEvent) {
-            return handleMatchingChord(keyEvent)
+            let result = handleMatchingChord(keyEvent)
+            if keyEvent.key == .nine && keyEvent.modifiers.contains(.command) && keyEvent.modifiers.contains(.control) {
+                print("[HotKeyProcessor] handleMatchingChord returned: \(String(describing: result))")
+            }
+            return result
         } else {
             // Potentially become dirty if chord has extra mods or different key
             if chordIsDirty(keyEvent) {
@@ -148,7 +161,12 @@ extension HotKeyProcessor {
         case .idle:
             // Check keyboard state only when hotkey is detected
             let pressedKeys = getPressedNonModifierKeys()
-            
+
+            // Debug: Show pressed keys for Cmd+Ctrl+9
+            if keyEvent.key == .nine && keyEvent.modifiers.contains(.command) && keyEvent.modifiers.contains(.control) {
+                print("[HotKeyProcessor] Pressed non-modifier keys detected: \(pressedKeys)")
+            }
+
             // For modifier-only hotkeys, check if any non-AI keys are pressed
             if hotkey.key == nil && !pressedKeys.isEmpty {
                 // Get the keyCode for the AI key (if we have one)
