@@ -134,8 +134,13 @@ struct SettingsView: View {
 
 				VStack(spacing: 12) {
 					// Info text for full keyboard shortcut support
-					if hotKey.key != nil {
-						Text("You're using a full keyboard shortcut. Double-tap is recommended.")
+					if hotKey.key != nil && !store.hexSettings.useDoubleTapOnly {
+						Text("Hold to record or double-tap to toggle recording")
+							.font(.caption)
+							.foregroundColor(.secondary)
+							.frame(maxWidth: .infinity, alignment: .center)
+					} else if hotKey.key != nil && store.hexSettings.useDoubleTapOnly {
+						Text("Double-tap to start/stop recording (hold disabled)")
 							.font(.caption)
 							.foregroundColor(.secondary)
 							.frame(maxWidth: .infinity, alignment: .center)
@@ -158,8 +163,10 @@ struct SettingsView: View {
 				// Double-tap toggle (for key+modifier combinations)
 				if hotKey.key != nil {
 					Label {
-						Toggle("Use double-tap only", isOn: $store.hexSettings.useDoubleTapOnly)
-						Text("Recommended for custom hotkeys to avoid interfering with normal usage")
+						Toggle("Require double-tap (disable hold)", isOn: $store.hexSettings.useDoubleTapOnly)
+						Text(store.hexSettings.useDoubleTapOnly ?
+							"Double-tap the hotkey to start/stop recording. Holding won't work." :
+							"Hold the hotkey to record, or double-tap to toggle recording on/off.")
 							.font(.caption)
 							.foregroundColor(.secondary)
 					} icon: {

@@ -242,7 +242,7 @@ private extension TranscriptionFeature {
         case .startRecording:
           isCurrentlyRecording = true
           isAIKeyHeld = false // Reset AI mode flag
-          
+
           // If double-tap lock is triggered, we start recording immediately
           if hotKeyProcessor.state == .doubleTapLock {
             Task { await send(.startRecording) }
