@@ -237,6 +237,12 @@
     "Dismissal Speed %lld WPM" : {
 
     },
+    "Double-tap the hotkey to start/stop recording. Holding won't work." : {
+
+    },
+    "Double-tap to start/stop recording (hold disabled)" : {
+
+    },
     "Download" : {
 
     },
@@ -365,6 +371,12 @@
 
     },
     "Hold the AI modifier key while recording to send transcription to Ollama for processing. The response will auto-dismiss based on reading speed." : {
+
+    },
+    "Hold the hotkey to record, or double-tap to toggle recording on/off." : {
+
+    },
+    "Hold to record or double-tap to toggle recording" : {
 
     },
     "Hot Key" : {
@@ -541,9 +553,6 @@
     "Recommended" : {
 
     },
-    "Recommended for custom hotkeys to avoid interfering with normal usage" : {
-
-    },
     "Refresh available input devices" : {
 
     },
@@ -560,6 +569,9 @@
           }
         }
       }
+    },
+    "Require double-tap (disable hold)" : {
+
     },
     "Reset to Default" : {
 
@@ -742,9 +754,6 @@
         }
       }
     },
-    "Use double-tap only" : {
-
-    },
     "Version" : {
       "comment" : "Label for version in About section.",
       "localizations" : {
@@ -768,9 +777,6 @@
       }
     },
     "When disabled, transcriptions will not be saved and audio files will be deleted immediately after transcription." : {
-
-    },
-    "You're using a full keyboard shortcut. Double-tap is recommended." : {
 
     },
     "Your transcription history will appear here." : {

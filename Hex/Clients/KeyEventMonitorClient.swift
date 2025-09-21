@@ -109,7 +109,17 @@ class KeyEventMonitorClientLive {
   }
 
   func startMonitoring() {
-    guard !isMonitoring else { return }
+    guard !isMonitoring else {
+      return
+    }
+
+    // Check accessibility permission first
+    let trusted = AXIsProcessTrusted()
+    if !trusted {
+      logger.error("Not trusted! Cannot create event tap.")
+      return
+    }
+
     isMonitoring = true
 
     // Create an event tap at the HID level to capture keyDown, keyUp, and flagsChanged

@@ -341,7 +341,16 @@ struct SettingsFeature {
 
       case .accessibilityStatusDidChange:
         let newStatus = checkAccessibilityPermission()
-        state.accessibilityPermission = newStatus
+        // Only update if the status actually changed
+        if state.accessibilityPermission != newStatus {
+          state.accessibilityPermission = newStatus
+          // If permission was granted, start monitoring
+          if newStatus == .granted {
+            return .run { _ in
+              await keyEventMonitor.startMonitoring()
+            }
+          }
+        }
         return .none
 
       // Model Management
