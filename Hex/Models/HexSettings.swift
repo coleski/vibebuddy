@@ -26,6 +26,7 @@ struct HexSettings: Codable, Equatable {
 	var ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions."
 	var enableAIProcessing: Bool = false // Whether to enable AI text processing
 	var aiProcessingPrompt: String = "Fix grammar and formatting" // Prompt for AI text processing
+	var isAIAssistantEnabled: Bool = false // Master toggle to enable/disable AI assistant feature
 
 	// Define coding keys to match struct properties
 	enum CodingKeys: String, CodingKey {
@@ -50,6 +51,7 @@ struct HexSettings: Codable, Equatable {
 		case ollamaSystemPrompt
 		case enableAIProcessing
 		case aiProcessingPrompt
+		case isAIAssistantEnabled
 	}
 
 	init(
@@ -73,7 +75,8 @@ struct HexSettings: Codable, Equatable {
 		aiResponseReadingSpeed: Double = 250.0,
 		ollamaSystemPrompt: String = "Be concise and helpful. For simple calculations or yes/no questions, give just the answer. For explanations or how-to questions, provide clear but brief responses with essential details. Avoid unnecessary preambles or conclusions.",
 		enableAIProcessing: Bool = false,
-		aiProcessingPrompt: String = "Fix grammar and formatting"
+		aiProcessingPrompt: String = "Fix grammar and formatting",
+		isAIAssistantEnabled: Bool = false
 	) {
 		self.soundEffectsEnabled = soundEffectsEnabled
 		self.hotkey = hotkey
@@ -96,6 +99,7 @@ struct HexSettings: Codable, Equatable {
 		self.ollamaSystemPrompt = ollamaSystemPrompt
 		self.enableAIProcessing = enableAIProcessing
 		self.aiProcessingPrompt = aiProcessingPrompt
+		self.isAIAssistantEnabled = isAIAssistantEnabled
 	}
 
 	// Custom decoder that handles missing fields
@@ -142,6 +146,8 @@ struct HexSettings: Codable, Equatable {
 			try container.decodeIfPresent(Bool.self, forKey: .enableAIProcessing) ?? false
 		aiProcessingPrompt =
 			try container.decodeIfPresent(String.self, forKey: .aiProcessingPrompt) ?? "Fix grammar and formatting"
+		isAIAssistantEnabled =
+			try container.decodeIfPresent(Bool.self, forKey: .isAIAssistantEnabled) ?? false
 	}
 }
 

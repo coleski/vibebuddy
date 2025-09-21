@@ -129,7 +129,7 @@ struct SettingsView: View {
 			// --- Hot Key Section ---
 			Section("Hot Key") {
 				let hotKey = store.hexSettings.hotkey
-				let key = store.isSettingHotKey ? nil : hotKey.key
+				let key = store.isSettingHotKey ? store.currentKey : hotKey.key
 				let modifiers = store.isSettingHotKey ? store.currentModifiers : hotKey.modifiers
 
 				VStack(spacing: 12) {
@@ -308,56 +308,73 @@ struct SettingsView: View {
 			
 			// --- AI Assistant Section ---
 			Section {
-				// AI Modifier Key (similar to Hot Key section)
-				VStack(spacing: 12) {
-					Text("AI Modifier (press with hotkey to trigger AI)")
-						.font(.caption)
-						.foregroundColor(.secondary)
-						.frame(maxWidth: .infinity, alignment: .center)
-					
-					// Hot key view for AI modifier
-					HStack {
-						Spacer()
-						HotKeyView(modifiers: [], key: store.isSettingAIKey ? nil : store.hexSettings.aiModifierKey, isActive: store.isSettingAIKey)
-							.animation(.spring(), value: store.hexSettings.aiModifierKey)
-							.animation(.spring(), value: store.isSettingAIKey)
-						Spacer()
-					}
-					.contentShape(Rectangle())
-					.onTapGesture {
-						store.send(.startSettingAIKey)
-					}
-				}
-				
-				// Dismissal Speed
+				// Master toggle for AI Assistant
 				Label {
-					Slider(value: $store.hexSettings.aiResponseReadingSpeed, in: 0...1000, step: 50) {
-						Text("Dismissal Speed \(Int(store.hexSettings.aiResponseReadingSpeed)) WPM")
-					}
-					.onChange(of: store.hexSettings.aiResponseReadingSpeed) { newValue in
-						print("[SettingsView] WPM slider changed to: \(newValue)")
-					}
+					Toggle("Enable AI Assistant", isOn: $store.hexSettings.isAIAssistantEnabled)
 				} icon: {
-					Image(systemName: "timer")
+					Image(systemName: "sparkles")
+				}
+
+				if store.hexSettings.isAIAssistantEnabled {
+					// AI Modifier Key (similar to Hot Key section)
+					VStack(spacing: 12) {
+						Text("AI Modifier (press with hotkey to trigger AI)")
+							.font(.caption)
+							.foregroundColor(.secondary)
+							.frame(maxWidth: .infinity, alignment: .center)
+
+						// Hot key view for AI modifier
+						HStack {
+							Spacer()
+							HotKeyView(modifiers: [], key: store.isSettingAIKey ? nil : store.hexSettings.aiModifierKey, isActive: store.isSettingAIKey)
+								.animation(.spring(), value: store.hexSettings.aiModifierKey)
+								.animation(.spring(), value: store.isSettingAIKey)
+							Spacer()
+						}
+						.contentShape(Rectangle())
+						.onTapGesture {
+							store.send(.startSettingAIKey)
+						}
+					}
+
+					// Dismissal Speed
+					Label {
+						Slider(value: $store.hexSettings.aiResponseReadingSpeed, in: 0...1000, step: 50) {
+							Text("Dismissal Speed \(Int(store.hexSettings.aiResponseReadingSpeed)) WPM")
+						}
+						.onChange(of: store.hexSettings.aiResponseReadingSpeed) { newValue in
+							print("[SettingsView] WPM slider changed to: \(newValue)")
+						}
+					} icon: {
+						Image(systemName: "timer")
+					}
 				}
 			} header: {
 				Text("AI Assistant")
 			} footer: {
-				Text("Hold the AI modifier key while recording to send transcription to Ollama for processing. The response will auto-dismiss based on reading speed.")
-					.font(.footnote)
-					.foregroundColor(.secondary)
+				if store.hexSettings.isAIAssistantEnabled {
+					Text("Hold the AI modifier key while recording to send transcription to Ollama for processing. The response will auto-dismiss based on reading speed.")
+						.font(.footnote)
+						.foregroundColor(.secondary)
+				} else {
+					Text("Enable to use AI assistant features. When disabled, the dictation hotkey will work normally without AI interference.")
+						.font(.footnote)
+						.foregroundColor(.secondary)
+				}
 			}
 			
 			// --- AI Models Section ---
-			Section {
-				OllamaModelView(
-					store: store.scope(
-						state: \.ollamaModel,
-						action: \.ollamaModel
+			if store.hexSettings.isAIAssistantEnabled {
+				Section {
+					OllamaModelView(
+						store: store.scope(
+							state: \.ollamaModel,
+							action: \.ollamaModel
+						)
 					)
-				)
-			} header: {
-				Text("AI Models")
+				} header: {
+					Text("AI Models")
+				}
 			}
 		}
 		.formStyle(GroupedFormStyle())

@@ -31,7 +31,8 @@ struct SettingsFeature {
 
     var languages: IdentifiedArrayOf<Language> = []
     var currentModifiers: Modifiers = .init(modifiers: [])
-    
+    var currentKey: Key? = nil
+
     // Available microphones
     var availableInputDevices: [AudioInputDevice] = []
 
@@ -115,7 +116,7 @@ struct SettingsFeature {
           await send(.modelDownload(.fetchModels))
           await send(.ollamaModel(.checkOllamaStatus))
           await send(.loadAvailableInputDevices)
-          
+
           // Set up periodic refresh of available devices (every 120 seconds)
           // Using a longer interval to reduce resource usage
           let deviceRefreshTask = Task { @MainActor in
@@ -126,11 +127,11 @@ struct SettingsFeature {
               }
             }
           }
-          
+
           // Listen for device connection/disconnection notifications
           // Using a simpler debounced approach with a single task
           var deviceUpdateTask: Task<Void, Never>?
-          
+
           // Helper function to debounce device updates
           func debounceDeviceUpdate() {
             deviceUpdateTask?.cancel()
@@ -141,7 +142,7 @@ struct SettingsFeature {
               }
             }
           }
-          
+
           let deviceConnectionObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name(rawValue: "AVCaptureDeviceWasConnected"),
             object: nil,
@@ -149,7 +150,7 @@ struct SettingsFeature {
           ) { _ in
             debounceDeviceUpdate()
           }
-          
+
           let deviceDisconnectionObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name(rawValue: "AVCaptureDeviceWasDisconnected"),
             object: nil,
@@ -157,7 +158,7 @@ struct SettingsFeature {
           ) { _ in
             debounceDeviceUpdate()
           }
-          
+
           // Be sure to clean up resources when the task is finished
           defer {
             deviceUpdateTask?.cancel()
@@ -165,31 +166,40 @@ struct SettingsFeature {
             NotificationCenter.default.removeObserver(deviceDisconnectionObserver)
           }
 
+          print("[SettingsFeature] Starting to listen for key events...")
           for try await keyEvent in await keyEventMonitor.listenForKeyPress() {
+            print("[SettingsFeature] Received key event via listenForKeyPress: \(keyEvent)")
             await send(.keyEvent(keyEvent))
           }
-          
+
           deviceRefreshTask.cancel()
         }
 
       case .startSettingHotKey:
         state.$isSettingHotKey.withLock { $0 = true }
         state.$isSettingAIKey.withLock { $0 = false }
+        state.currentModifiers = []
+        state.currentKey = nil
         return .none
 
       case .startSettingAIKey:
-        state.$isSettingAIKey.withLock { $0 = true }
-        state.$isSettingHotKey.withLock { $0 = false }
+        // Only allow setting AI key if AI assistant is enabled
+        if state.hexSettings.isAIAssistantEnabled {
+          state.$isSettingAIKey.withLock { $0 = true }
+          state.$isSettingHotKey.withLock { $0 = false }
+        }
         return .none
 
       case let .keyEvent(keyEvent):
+        print("[SettingsFeature] Received keyEvent: key=\(keyEvent.key?.toString ?? "nil"), modifiers=\(keyEvent.modifiers)")
+
         // Handle setting AI modifier key
         if state.isSettingAIKey {
           if keyEvent.key == .escape {
             state.$isSettingAIKey.withLock { $0 = false }
             return .none
           }
-          
+
           // For AI key, we only want a single key, not modifiers
           if let key = keyEvent.key {
             state.$hexSettings.withLock {
@@ -199,32 +209,45 @@ struct SettingsFeature {
           }
           return .none
         }
-        
+
         // Handle setting main hotkey
         guard state.isSettingHotKey else { return .none }
 
         if keyEvent.key == .escape {
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
+          state.currentKey = nil
           return .none
         }
 
-        state.currentModifiers = keyEvent.modifiers.union(state.currentModifiers)
-        let currentModifiers = state.currentModifiers
+        // Update current modifiers and key to show live feedback
+        if !keyEvent.modifiers.isEmpty {
+          state.currentModifiers = keyEvent.modifiers
+        }
+
+        // Show the key being pressed (even before releasing)
+        if let key = keyEvent.key {
+          state.currentKey = key
+        }
+
+        // If a key is pressed (not just modifiers), save the hotkey
         if let key = keyEvent.key {
           state.$hexSettings.withLock {
             $0.hotkey.key = key
-            $0.hotkey.modifiers = currentModifiers
+            $0.hotkey.modifiers = state.currentModifiers
           }
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
-        } else if keyEvent.modifiers.isEmpty {
+          state.currentKey = nil
+        } else if keyEvent.modifiers.isEmpty && !state.currentModifiers.isEmpty {
+          // User released all modifiers after pressing some - save modifier-only hotkey
           state.$hexSettings.withLock {
             $0.hotkey.key = nil
-            $0.hotkey.modifiers = currentModifiers
+            $0.hotkey.modifiers = state.currentModifiers
           }
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
+          state.currentKey = nil
         }
         return .none
 

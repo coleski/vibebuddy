@@ -224,8 +224,8 @@ private extension TranscriptionFeature {
           return false
         }
         
-        // Track AI modifier key when we're recording
-        if isCurrentlyRecording && keyEvent.key == hexSettings.aiModifierKey {
+        // Track AI modifier key when we're recording (only if AI assistant is enabled)
+        if isCurrentlyRecording && hexSettings.isAIAssistantEnabled && keyEvent.key == hexSettings.aiModifierKey {
           isAIKeyHeld = true
           // Immediately update AI mode visually
           Task { await send(.setAIMode(true)) }
@@ -274,10 +274,10 @@ private extension TranscriptionFeature {
           // If we're recording and a non-hotkey/non-AI key is pressed, cancel the recording
           if isCurrentlyRecording {
             // Check if this is neither the hotkey nor the AI key
-            let isHotkey = (keyEvent.key == hotKeyProcessor.hotkey.key && 
+            let isHotkey = (keyEvent.key == hotKeyProcessor.hotkey.key &&
                            keyEvent.modifiers == hotKeyProcessor.hotkey.modifiers)
-            let isAIKey = (keyEvent.key == hexSettings.aiModifierKey)
-            
+            let isAIKey = hexSettings.isAIAssistantEnabled && (keyEvent.key == hexSettings.aiModifierKey)
+
             if !isHotkey && !isAIKey && keyEvent.key != nil {
               // Cancel the recording (silent - accidental key detection)
               isCurrentlyRecording = false
