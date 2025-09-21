@@ -117,6 +117,21 @@ struct SettingsFeature {
           await send(.ollamaModel(.checkOllamaStatus))
           await send(.loadAvailableInputDevices)
 
+          // Listen for accessibility permission changes via distributed notification
+          let accessibilityObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.accessibility.api"),
+            object: nil,
+            queue: .main
+          ) { _ in
+            Task {
+              await send(.accessibilityStatusDidChange)
+            }
+          }
+
+          defer {
+            DistributedNotificationCenter.default().removeObserver(accessibilityObserver)
+          }
+
           // Set up periodic refresh of available devices (every 120 seconds)
           // Using a longer interval to reduce resource usage
           let deviceRefreshTask = Task { @MainActor in
@@ -304,23 +319,24 @@ struct SettingsFeature {
         return .run { send in
           // First, prompt the user with the system dialog
           let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-          _ = AXIsProcessTrustedWithOptions(options)
+          let alreadyTrusted = AXIsProcessTrustedWithOptions(options)
 
-          // Open System Settings
+          // If already trusted, just update the status
+          if alreadyTrusted {
+            await send(.setAccessibilityPermission(.granted))
+            return
+          }
+
+          // Open System Settings to the right pane
           NSWorkspace.shared.open(
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
           )
 
-          // Poll for changes every second until granted
-          for await _ in self.clock.timer(interval: .seconds(0.5)) {
-            let newStatus = checkAccessibilityPermission()
-            await send(.setAccessibilityPermission(newStatus))
-
-            // If permission is granted, we can stop polling
-            if newStatus == .granted {
-              break
-            }
-          }
+          // The distributed notification observer will handle updates
+          // Just check once more after a short delay to catch immediate changes
+          try? await Task.sleep(for: .seconds(1))
+          let newStatus = checkAccessibilityPermission()
+          await send(.setAccessibilityPermission(newStatus))
         }
 
       case .accessibilityStatusDidChange:
