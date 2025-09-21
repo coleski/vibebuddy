@@ -277,7 +277,13 @@
     "Downloading model..." : {
 
     },
+    "Enable AI Assistant" : {
+
+    },
     "Enable in Settings" : {
+
+    },
+    "Enable to use AI assistant features. When disabled, the dictation hotkey will work normally without AI interference." : {
 
     },
     "Ensure Hex can access your microphone and system accessibility features." : {

@@ -166,9 +166,7 @@ struct SettingsFeature {
             NotificationCenter.default.removeObserver(deviceDisconnectionObserver)
           }
 
-          print("[SettingsFeature] Starting to listen for key events...")
           for try await keyEvent in await keyEventMonitor.listenForKeyPress() {
-            print("[SettingsFeature] Received key event via listenForKeyPress: \(keyEvent)")
             await send(.keyEvent(keyEvent))
           }
 
@@ -191,8 +189,6 @@ struct SettingsFeature {
         return .none
 
       case let .keyEvent(keyEvent):
-        print("[SettingsFeature] Received keyEvent: key=\(keyEvent.key?.toString ?? "nil"), modifiers=\(keyEvent.modifiers)")
-
         // Handle setting AI modifier key
         if state.isSettingAIKey {
           if keyEvent.key == .escape {
