@@ -617,9 +617,9 @@ private extension TranscriptionFeature {
       let aiGeneration = Effect.run { send in
         do {
           let response = try await ollama.generate(result, model, systemPrompt)
-          await send(.aiResponseReceived(response))
+          await send(Action.aiResponseReceived(response))
         } catch {
-          await send(.aiGenerationError(error))
+          await send(Action.aiGenerationError(error))
         }
       }
       
