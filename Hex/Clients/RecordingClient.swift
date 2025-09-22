@@ -274,7 +274,7 @@ private func sendMediaKey() {
 
 actor RecordingClientLive {
   private var recorder: AVAudioRecorder?
-  private let recordingURL = FileManager.default.temporaryDirectory.appendingPathComponent("recording.wav")
+  private var currentRecordingURL: URL?
   private let (meterStream, meterContinuation) = AsyncStream<Meter>.makeStream()
   private var meterTask: Task<Void, Never>?
     
@@ -480,6 +480,12 @@ actor RecordingClientLive {
   }
 
   func startRecording() async {
+    // Generate a unique filename for this recording
+    let timestamp = Int(Date().timeIntervalSince1970 * 1000) // milliseconds for uniqueness
+    let recordingURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("recording_\(timestamp).wav")
+    currentRecordingURL = recordingURL
+    
     // If audio is playing on the default output, pause it.
     if hexSettings.pauseMediaOnRecord {
       // First, pause all media applications using their AppleScript interface.
@@ -556,7 +562,9 @@ actor RecordingClientLive {
       didPauseMedia = false
       print("Resuming previously paused media.")
     }
-    return recordingURL
+    
+    // Return the unique URL for this recording
+    return currentRecordingURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("recording.wav")
   }
 
   func startMeterTask() {
