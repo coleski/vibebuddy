@@ -607,6 +607,12 @@ private extension TranscriptionFeature {
     // Remove the processed item from queue
     state.transcriptionQueue.removeAll { $0.id == id }
     
+    // Clean up the temporary audio file
+    let audioURL = processedItem.audioURL
+    let cleanupEffect = Effect.run { _ in
+      try? FileManager.default.removeItem(at: audioURL)
+    }
+    
     // Handle the result based on whether it was AI mode
     if processedItem.isAIMode && !result.isEmpty {
       state.isGeneratingAI = true
@@ -623,7 +629,7 @@ private extension TranscriptionFeature {
         }
       }
       
-      return .merge(continueProcessing, aiGeneration)
+      return .merge(cleanupEffect, continueProcessing, aiGeneration)
     } else if !result.isEmpty {
       // Normal transcription mode - paste the text
       let duration = processedItem.startTime.timeIntervalSinceNow * -1
@@ -635,10 +641,10 @@ private extension TranscriptionFeature {
         transcriptionHistory: state.$transcriptionHistory
       )
       
-      return .merge(continueProcessing, finalizeEffect)
+      return .merge(cleanupEffect, continueProcessing, finalizeEffect)
     } else {
       // Empty result, just continue
-      return .send(.startProcessingQueue)
+      return .merge(cleanupEffect, .send(.startProcessingQueue))
     }
   }
   
@@ -647,13 +653,22 @@ private extension TranscriptionFeature {
     id: UUID,
     error: Error
   ) -> Effect<Action> {
-    // Remove the failed item from queue
+    // Find and remove the failed item from queue
+    let failedItem = state.transcriptionQueue.first { $0.id == id }
     state.transcriptionQueue.removeAll { $0.id == id }
+    
+    // Clean up the temporary audio file if we found the item
+    let cleanupEffect: Effect<Action> = failedItem.map { item in
+      .run { _ in
+        try? FileManager.default.removeItem(at: item.audioURL)
+      }
+    } ?? .none
     
     // Show error and continue processing
     state.error = error.localizedDescription
     
     return .merge(
+      cleanupEffect,
       .run { _ in
         await soundEffect.play(.cancel)
       },

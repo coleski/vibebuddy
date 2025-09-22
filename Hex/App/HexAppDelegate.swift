@@ -22,6 +22,9 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 			await soundEffect.preloadSounds()
 		}
 		print("HexAppDelegate did finish launching")
+		
+		// Clean up any old temporary recording files from previous runs
+		cleanupOldTemporaryRecordingFiles()
 
 		// Set activation policy first
 		updateAppMode()
@@ -105,5 +108,60 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 	func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
 		presentSettingsView()
 		return true
+	}
+	
+	func applicationWillTerminate(_ notification: Notification) {
+		// Clean up any temporary recording files when app terminates
+		cleanupTemporaryRecordingFiles()
+	}
+	
+	private func cleanupTemporaryRecordingFiles() {
+		let tempDir = FileManager.default.temporaryDirectory
+		
+		do {
+			let tempFiles = try FileManager.default.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil)
+			
+			// Remove files that match our recording pattern
+			for file in tempFiles {
+				let filename = file.lastPathComponent
+				if filename.hasPrefix("recording_") && filename.hasSuffix(".wav") {
+					try? FileManager.default.removeItem(at: file)
+				}
+			}
+		} catch {
+			print("Error cleaning up temporary recording files: \(error)")
+		}
+	}
+	
+	private func cleanupOldTemporaryRecordingFiles() {
+		let tempDir = FileManager.default.temporaryDirectory
+		let now = Date()
+		let maxAge: TimeInterval = 24 * 60 * 60 // 24 hours
+		
+		do {
+			let tempFiles = try FileManager.default.contentsOfDirectory(
+				at: tempDir, 
+				includingPropertiesForKeys: [.contentModificationDateKey]
+			)
+			
+			// Remove old files that match our recording pattern
+			for file in tempFiles {
+				let filename = file.lastPathComponent
+				if filename.hasPrefix("recording_") && filename.hasSuffix(".wav") {
+					// Check file age
+					if let modificationDate = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate {
+						if now.timeIntervalSince(modificationDate) > maxAge {
+							try? FileManager.default.removeItem(at: file)
+							print("Cleaned up old temporary recording file: \(filename)")
+						}
+					} else {
+						// If we can't get the date, remove it to be safe
+						try? FileManager.default.removeItem(at: file)
+					}
+				}
+			}
+		} catch {
+			print("Error cleaning up old temporary recording files: \(error)")
+		}
 	}
 }
