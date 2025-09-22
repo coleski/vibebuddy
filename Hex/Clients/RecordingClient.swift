@@ -275,6 +275,7 @@ private func sendMediaKey() {
 actor RecordingClientLive {
   private var recorder: AVAudioRecorder?
   private var recorderURL: URL? // URL associated with the current recorder
+  private var isCurrentlyRecording: Bool = false // Explicit recording state
   private let (meterStream, meterContinuation) = AsyncStream<Meter>.makeStream()
   private var meterTask: Task<Void, Never>?
     
@@ -481,7 +482,7 @@ actor RecordingClientLive {
 
   func startRecording() async -> Bool {
     // If already recording, ignore the request
-    if recorder?.isRecording == true {
+    if isCurrentlyRecording {
       print("Recording already in progress, ignoring new recording request")
       return false
     }
@@ -491,6 +492,8 @@ actor RecordingClientLive {
     let recordingURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("recording_\(timestamp).wav")
     recorderURL = recordingURL
+    
+    print("Starting new recording with URL: \(recordingURL.lastPathComponent)")
     
     // If audio is playing on the default output, pause it.
     if hexSettings.pauseMediaOnRecord {
@@ -542,6 +545,7 @@ actor RecordingClientLive {
       recorderURL = recordingURL // Store the URL with this recorder
       recorder?.isMeteringEnabled = true
       recorder?.record()
+      isCurrentlyRecording = true // Set recording state
       startMeterTask()
       print("Recording started.")
       return true
@@ -555,9 +559,12 @@ actor RecordingClientLive {
     // Capture the URL for this recording session before clearing state
     let recordingURL = recorderURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("recording.wav")
     
+    print("Stopping recording, returning URL: \(recordingURL.lastPathComponent)")
+    
     recorder?.stop()
     recorder = nil
     recorderURL = nil // Clear the URL
+    isCurrentlyRecording = false // Clear recording state
     stopMeterTask()
     print("Recording stopped.")
 
