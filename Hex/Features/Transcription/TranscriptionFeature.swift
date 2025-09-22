@@ -607,6 +607,74 @@ private extension TranscriptionFeature {
     }
   }
   
+  /// Finalize a queued transcription (similar to finalizeRecordingAndStoreTranscript but for queue items)
+  func finalizeQueuedTranscript(
+    result: String,
+    duration: TimeInterval,
+    audioURL: URL,
+    transcriptionHistory: Shared<TranscriptionHistory>
+  ) -> Effect<Action> {
+    .run { send in
+      do {
+        @Shared(.hexSettings) var hexSettings: HexSettings
+
+        // Check if we should save to history
+        if hexSettings.saveTranscriptionHistory {
+          // Move the file to a permanent location
+          let fm = FileManager.default
+          let supportDir = try fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+          )
+          let ourAppFolder = supportDir.appendingPathComponent("com.kitlangton.Hex", isDirectory: true)
+          let recordingsFolder = ourAppFolder.appendingPathComponent("Recordings", isDirectory: true)
+          try fm.createDirectory(at: recordingsFolder, withIntermediateDirectories: true)
+
+          // Create a unique file name
+          let filename = "\(Date().timeIntervalSince1970).wav"
+          let finalURL = recordingsFolder.appendingPathComponent(filename)
+
+          // Move temp => final
+          try fm.moveItem(at: audioURL, to: finalURL)
+
+          // Build a transcript object
+          let transcript = Transcript(
+            timestamp: Date(),
+            text: result,
+            audioPath: finalURL,
+            duration: duration
+          )
+
+          // Append to the in-memory shared history
+          transcriptionHistory.withLock { history in
+            history.history.insert(transcript, at: 0)
+            
+            // Trim history if max entries is set
+            if let maxEntries = hexSettings.maxHistoryEntries, maxEntries > 0 {
+              while history.history.count > maxEntries {
+                if let removedTranscript = history.history.popLast() {
+                  // Delete the audio file
+                  try? FileManager.default.removeItem(at: removedTranscript.audioPath)
+                }
+              }
+            }
+          }
+        } else {
+          // If not saving history, just delete the temp audio file
+          try? FileManager.default.removeItem(at: audioURL)
+        }
+
+        // Paste text (and copy if enabled via pasteWithClipboard)
+        await pasteboard.paste(result)
+        await soundEffect.play(.pasteTranscript)
+      } catch {
+        await send(.transcriptionError(error))
+      }
+    }
+  }
+  
   // MARK: - Queue Processing Handlers
   
   func handleQueueTranscriptionResult(
@@ -651,9 +719,10 @@ private extension TranscriptionFeature {
       let duration = processedItem.startTime.timeIntervalSinceNow * -1
       
       let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
-      let finalizeEffect = finalizeRecordingAndStoreTranscript(
+      let finalizeEffect = finalizeQueuedTranscript(
         result: result,
         duration: duration,
+        audioURL: processedItem.audioURL,
         transcriptionHistory: state.$transcriptionHistory
       )
       
