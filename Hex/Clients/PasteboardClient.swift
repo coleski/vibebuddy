@@ -69,12 +69,18 @@ actor PasteboardClientLive {
         isProcessingQueue = false
     }
     
-    @MainActor
     private func performPaste(text: String) async {
-        if hexSettings.useClipboardPaste {
-            await pasteWithClipboard(text)
+        // Get the setting values in actor context
+        let useClipboard = hexSettings.useClipboardPaste
+        let copyToClipboard = hexSettings.copyToClipboard
+        
+        // Perform the paste operation on main actor
+        if useClipboard {
+            await pasteWithClipboard(text, copyToClipboard: copyToClipboard)
         } else {
-            simulateTypingWithAppleScript(text)
+            await MainActor.run {
+                simulateTypingWithAppleScript(text)
+            }
         }
     }
     
@@ -164,9 +170,9 @@ actor PasteboardClientLive {
     }
 
     @MainActor
-    func pasteWithClipboard(_ text: String) async {
+    func pasteWithClipboard(_ text: String, copyToClipboard: Bool) async {
         let pasteboard = NSPasteboard.general
-        let originalItems = savePasteboardState(pasteboard: pasteboard)
+        let originalItems = await savePasteboardState(pasteboard: pasteboard)
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
@@ -208,15 +214,15 @@ actor PasteboardClientLive {
         // Only restore original pasteboard contents if:
         // 1. Copying to clipboard is disabled AND
         // 2. The paste operation succeeded
-        if !hexSettings.copyToClipboard && pasteSucceeded {
+        if !copyToClipboard && pasteSucceeded {
             try? await Task.sleep(for: .seconds(0.1))
             pasteboard.clearContents()
-            restorePasteboardState(pasteboard: pasteboard, savedItems: originalItems)
+            await restorePasteboardState(pasteboard: pasteboard, savedItems: originalItems)
         }
         
         // If we failed to paste AND user doesn't want clipboard retention,
         // show a notification that text is available in clipboard
-        if !pasteSucceeded && !hexSettings.copyToClipboard {
+        if !pasteSucceeded && !copyToClipboard {
             // Keep the transcribed text in clipboard regardless of setting
             print("Paste operation failed. Text remains in clipboard as fallback.")
             
