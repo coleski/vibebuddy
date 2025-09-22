@@ -46,26 +46,37 @@ actor PasteboardClientLive {
     private var isProcessingQueue = false
 
     func paste(text: String) async {
+        print("[PasteboardClient] Adding text to paste queue: '\(text)'")
         // Add to queue and process
         pasteQueue.append(text)
         await processQueue()
     }
     
     private func processQueue() async {
+        print("[PasteboardClient] processQueue called, isProcessingQueue: \(isProcessingQueue), queue count: \(pasteQueue.count)")
         // Prevent concurrent processing
-        guard !isProcessingQueue else { return }
-        guard !pasteQueue.isEmpty else { return }
+        guard !isProcessingQueue else { 
+            print("[PasteboardClient] Already processing queue, returning")
+            return 
+        }
+        guard !pasteQueue.isEmpty else { 
+            print("[PasteboardClient] Queue is empty, returning")
+            return 
+        }
         
+        print("[PasteboardClient] Starting queue processing")
         isProcessingQueue = true
         
         while !pasteQueue.isEmpty {
             let text = pasteQueue.removeFirst()
+            print("[PasteboardClient] Processing paste for text: '\(text)'")
             await performPaste(text: text)
             
             // Small delay between pastes to avoid conflicts
             try? await Task.sleep(for: .milliseconds(100))
         }
         
+        print("[PasteboardClient] Finished queue processing")
         isProcessingQueue = false
     }
     
@@ -74,10 +85,14 @@ actor PasteboardClientLive {
         let useClipboard = hexSettings.useClipboardPaste
         let copyToClipboard = hexSettings.copyToClipboard
         
+        print("[PasteboardClient] performPaste called with useClipboard: \(useClipboard), copyToClipboard: \(copyToClipboard)")
+        
         // Perform the paste operation on main actor
         if useClipboard {
+            print("[PasteboardClient] Using clipboard paste")
             await pasteWithClipboard(text, copyToClipboard: copyToClipboard)
         } else {
+            print("[PasteboardClient] Using simulated typing")
             await MainActor.run {
                 simulateTypingWithAppleScript(text)
             }
@@ -171,15 +186,19 @@ actor PasteboardClientLive {
 
     @MainActor
     func pasteWithClipboard(_ text: String, copyToClipboard: Bool) async {
+        print("[PasteboardClient] pasteWithClipboard started for text: '\(text)'")
         let pasteboard = NSPasteboard.general
         let originalItems = await savePasteboardState(pasteboard: pasteboard)
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+        print("[PasteboardClient] Set text to pasteboard")
 
         let source = CGEventSource(stateID: .combinedSessionState)
         
         // Track if paste operation successful
+        print("[PasteboardClient] Attempting to paste to frontmost app")
         var pasteSucceeded = PasteboardClientLive.pasteToFrontmostApp()
+        print("[PasteboardClient] Paste to frontmost app result: \(pasteSucceeded)")
         
         // If menu-based paste failed, try simulated keypresses
         if !pasteSucceeded {
@@ -233,12 +252,15 @@ actor PasteboardClientLive {
     
     @MainActor  
     func simulateTypingWithAppleScript(_ text: String) {
+        print("[PasteboardClient] simulateTypingWithAppleScript called for text: '\(text)'")
         let escapedText = text.replacingOccurrences(of: "\"", with: "\\\"")
         let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"\(escapedText)\"")
         var error: NSDictionary?
         script?.executeAndReturnError(&error)
         if let error = error {
-            print("Error executing AppleScript: \(error)")
+            print("[PasteboardClient] Error executing AppleScript: \(error)")
+        } else {
+            print("[PasteboardClient] AppleScript typing completed successfully")
         }
     }
 

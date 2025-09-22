@@ -667,7 +667,9 @@ private extension TranscriptionFeature {
         }
 
         // Paste text (and copy if enabled via pasteWithClipboard)
+        print("[TranscriptionFeature] finalizeQueuedTranscript about to paste result: '\(result)'")
         await pasteboard.paste(result)
+        print("[TranscriptionFeature] finalizeQueuedTranscript paste completed, playing sound")
         await soundEffect.play(.pasteTranscript)
       } catch {
         await send(.transcriptionError(error))
