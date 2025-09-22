@@ -609,7 +609,7 @@ private extension TranscriptionFeature {
     
     // Clean up the temporary audio file
     let audioURL = processedItem.audioURL
-    let cleanupEffect = Effect.run { _ in
+    let cleanupEffect: Effect<Action> = .run { _ in
       try? FileManager.default.removeItem(at: audioURL)
     }
     
@@ -659,7 +659,7 @@ private extension TranscriptionFeature {
     
     // Clean up the temporary audio file if we found the item
     let cleanupEffect: Effect<Action> = failedItem.map { item in
-      .run { _ in
+      Effect<Action>.run { _ in
         try? FileManager.default.removeItem(at: item.audioURL)
       }
     } ?? .none
