@@ -9,8 +9,8 @@ struct PortManagementView: View {
       if !store.processes.isEmpty {
         ForEach(store.processes) { process in
           Button(action: { store.send(.killProcess(process)) }) {
-            Text("\(process.port)  \(process.processName)")
-              .font(.system(.body))
+            Text("\(String(format: "%d", process.port)): \(process.processName)")
+              .font(.system(.body, design: .monospaced))
               .frame(minWidth: 200, alignment: .leading)
           }
           .buttonStyle(PortButtonStyle())
