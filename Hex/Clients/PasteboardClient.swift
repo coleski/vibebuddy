@@ -38,11 +38,39 @@ extension DependencyValues {
     }
 }
 
-struct PasteboardClientLive {
+actor PasteboardClientLive {
     @Shared(.hexSettings) var hexSettings: HexSettings
+    
+    // Queue to ensure paste operations happen sequentially
+    private var pasteQueue: [String] = []
+    private var isProcessingQueue = false
 
-    @MainActor
     func paste(text: String) async {
+        // Add to queue and process
+        pasteQueue.append(text)
+        await processQueue()
+    }
+    
+    private func processQueue() async {
+        // Prevent concurrent processing
+        guard !isProcessingQueue else { return }
+        guard !pasteQueue.isEmpty else { return }
+        
+        isProcessingQueue = true
+        
+        while !pasteQueue.isEmpty {
+            let text = pasteQueue.removeFirst()
+            await performPaste(text: text)
+            
+            // Small delay between pastes to avoid conflicts
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        
+        isProcessingQueue = false
+    }
+    
+    @MainActor
+    private func performPaste(text: String) async {
         if hexSettings.useClipboardPaste {
             await pasteWithClipboard(text)
         } else {
@@ -58,6 +86,7 @@ struct PasteboardClientLive {
     }
 
     // Function to save the current state of the NSPasteboard
+    @MainActor
     func savePasteboardState(pasteboard: NSPasteboard) -> [[String: Any]] {
         var savedItems: [[String: Any]] = []
         
@@ -75,6 +104,7 @@ struct PasteboardClientLive {
     }
 
     // Function to restore the saved state of the NSPasteboard
+    @MainActor
     func restorePasteboardState(pasteboard: NSPasteboard, savedItems: [[String: Any]]) {
         pasteboard.clearContents()
         
@@ -133,6 +163,7 @@ struct PasteboardClientLive {
         return false
     }
 
+    @MainActor
     func pasteWithClipboard(_ text: String) async {
         let pasteboard = NSPasteboard.general
         let originalItems = savePasteboardState(pasteboard: pasteboard)
@@ -194,6 +225,7 @@ struct PasteboardClientLive {
         }
     }
     
+    @MainActor  
     func simulateTypingWithAppleScript(_ text: String) {
         let escapedText = text.replacingOccurrences(of: "\"", with: "\\\"")
         let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"\(escapedText)\"")
