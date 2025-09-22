@@ -57,6 +57,7 @@ struct TranscriptionFeature {
 
     // Recording flow
     case startRecording
+    case recordingStarted
     case stopRecording
     case modelCheckResult(Bool)
     case hideNeedsModelIndicator
@@ -118,7 +119,7 @@ struct TranscriptionFeature {
       // MARK: - HotKey Flow
 
       case let .hotKeyPressed(isAIMode):
-        // Start recording regardless of transcription state - no more canceling
+        // Start recording - allow during transcription but not during another recording
         state.isAIMode = isAIMode
         return handleHotKeyPressed(minimumKeyTime: state.hexSettings.minimumKeyTime)
 
@@ -136,6 +137,9 @@ struct TranscriptionFeature {
           let isModelAvailable = await transcription.isModelDownloaded(model)
           await send(.modelCheckResult(isModelAvailable))
         }
+        
+      case .recordingStarted:
+        return handleRecordingStarted(&state)
         
       case let .modelCheckResult(isAvailable):
         if isAvailable {
@@ -402,6 +406,19 @@ private extension TranscriptionFeature {
 
 private extension TranscriptionFeature {
   func handleStartRecording(_ state: inout State) -> Effect<Action> {
+    return .run { send in
+      let recordingStarted = await recording.startRecording()
+      
+      if recordingStarted {
+        await send(.recordingStarted)
+      } else {
+        // Recording couldn't start (probably already recording)
+        print("Recording could not start - likely already in progress")
+      }
+    }
+  }
+  
+  func handleRecordingStarted(_ state: inout State) -> Effect<Action> {
     state.isRecording = true
     state.recordingStartTime = Date()
     state.needsModel = false
@@ -415,7 +432,6 @@ private extension TranscriptionFeature {
     }
 
     return .run { _ in
-      await recording.startRecording()
       await soundEffect.play(.startRecording)
     }
   }
