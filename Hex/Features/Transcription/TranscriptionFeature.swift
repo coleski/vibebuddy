@@ -14,6 +14,15 @@ import IOKit
 import IOKit.pwr_mgt
 import Sauce
 
+struct QueuedTranscription: Identifiable, Equatable {
+  let id = UUID()
+  let audioURL: URL
+  let startTime: Date
+  let isAIMode: Bool
+  let model: String
+  let language: String?
+}
+
 @Reducer
 struct TranscriptionFeature {
   @ObservableState
@@ -29,6 +38,11 @@ struct TranscriptionFeature {
     var recordingStartTime: Date?
     var meter: Meter = .init(averagePower: 0, peakPower: 0)
     var assertionID: IOPMAssertionID?
+    
+    // Queue management
+    var transcriptionQueue: [QueuedTranscription] = []
+    var isProcessingQueue: Bool = false
+    
     @Shared(.hexSettings) var hexSettings: HexSettings
     @Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
   }
@@ -54,6 +68,12 @@ struct TranscriptionFeature {
     case transcriptionResult(String)
     case transcriptionError(Error)
     
+    // Queue management
+    case queueTranscription(QueuedTranscription)
+    case startProcessingQueue
+    case transcriptionQueueResult(id: UUID, result: String)
+    case transcriptionQueueError(id: UUID, error: Error)
+    
     // AI Mode
     case setAIMode(Bool)
     case aiResponseReceived(String)
@@ -65,6 +85,7 @@ struct TranscriptionFeature {
     case delayedRecord
     case metering
     case transcription
+    case queueProcessing
   }
 
   @Dependency(\.transcription) var transcription
@@ -97,10 +118,9 @@ struct TranscriptionFeature {
       // MARK: - HotKey Flow
 
       case let .hotKeyPressed(isAIMode):
-        // If we're transcribing, send a cancel first. Then queue up a
-        // "startRecording" after minimumKeyTime if the user keeps holding the hotkey.
+        // Start recording regardless of transcription state - no more canceling
         state.isAIMode = isAIMode
-        return handleHotKeyPressed(isTranscribing: state.isTranscribing, minimumKeyTime: state.hexSettings.minimumKeyTime)
+        return handleHotKeyPressed(minimumKeyTime: state.hexSettings.minimumKeyTime)
 
       case .hotKeyReleased:
         // If we’re currently recording, then stop. Otherwise, just cancel
@@ -148,6 +168,56 @@ struct TranscriptionFeature {
 
       case let .transcriptionError(error):
         return handleTranscriptionError(&state, error: error)
+        
+      // MARK: - Queue Management
+      
+      case let .queueTranscription(queuedTranscription):
+        state.transcriptionQueue.append(queuedTranscription)
+        // Start processing queue if not already processing
+        if !state.isProcessingQueue {
+          return .send(.startProcessingQueue)
+        }
+        return .none
+        
+      case .startProcessingQueue:
+        guard !state.transcriptionQueue.isEmpty else {
+          state.isProcessingQueue = false
+          state.isTranscribing = false
+          state.isPrewarming = false
+          return .none
+        }
+        
+        state.isProcessingQueue = true
+        state.isTranscribing = true
+        state.isPrewarming = true
+        
+        let queuedItem = state.transcriptionQueue[0]
+        
+        return .run { send in
+          do {
+            // Create transcription options with the selected language
+            let decodeOptions = DecodingOptions(
+              language: queuedItem.language,
+              detectLanguage: queuedItem.language == nil,
+              chunkingStrategy: .vad
+            )
+            
+            let result = try await transcription.transcribe(queuedItem.audioURL, queuedItem.model, decodeOptions) { _ in }
+            
+            print("Transcribed queued audio from URL: \(queuedItem.audioURL) to text: \(result)")
+            await send(.transcriptionQueueResult(id: queuedItem.id, result: result))
+          } catch {
+            print("Error transcribing queued audio: \(error)")
+            await send(.transcriptionQueueError(id: queuedItem.id, error: error))
+          }
+        }
+        .cancellable(id: CancelID.queueProcessing)
+        
+      case let .transcriptionQueueResult(id, result):
+        return handleQueueTranscriptionResult(&state, id: id, result: result)
+        
+      case let .transcriptionQueueError(id, error):
+        return handleQueueTranscriptionError(&state, id: id, error: error)
         
       // MARK: - AI Mode
       
@@ -304,9 +374,7 @@ private extension TranscriptionFeature {
 // MARK: - HotKey Press/Release Handlers
 
 private extension TranscriptionFeature {
-  func handleHotKeyPressed(isTranscribing: Bool, minimumKeyTime: Double) -> Effect<Action> {
-    let maybeCancel = isTranscribing ? Effect.send(Action.cancel(playSound: true)) : .none
-
+  func handleHotKeyPressed(minimumKeyTime: Double) -> Effect<Action> {
     // We wait minimumKeyTime before actually sending `.startRecording`
     // so the user can do a quick press => do something else
     // (like a double-tap).
@@ -316,7 +384,7 @@ private extension TranscriptionFeature {
     }
     .cancellable(id: CancelID.delayedRecord, cancelInFlight: true)
 
-    return .merge(maybeCancel, delayedStart)
+    return delayedStart
   }
 
   func handleHotKeyReleased(isRecording: Bool) -> Effect<Action> {
@@ -356,7 +424,7 @@ private extension TranscriptionFeature {
     state.isRecording = false
 
     // Allow system to sleep again by releasing the power management assertion
-    // Always call this, even if the setting is off, to ensure we don’t leak assertions
+    // Always call this, even if the setting is off, to ensure we don't leak assertions
     //  (e.g. if the setting was toggled off mid-recording)
     reallowSystemSleep(&state)
 
@@ -365,7 +433,7 @@ private extension TranscriptionFeature {
       return Date().timeIntervalSince(startTime) > state.hexSettings.minimumKeyTime
     }()
 
-      guard (durationIsLongEnough && state.hexSettings.hotkey.key == nil) else {
+    guard (durationIsLongEnough && state.hexSettings.hotkey.key == nil) else {
       // If the user recorded for less than minimumKeyTime, just discard
       // unless the hotkey includes a regular key, in which case, we can assume it was intentional
       print("Recording was too short, discarding")
@@ -374,36 +442,26 @@ private extension TranscriptionFeature {
       }
     }
 
-    // Otherwise, proceed to transcription
-    state.isTranscribing = true
-    state.error = nil
+    // Create queued transcription instead of immediate transcription
     let model = state.hexSettings.selectedModel
     let language = state.hexSettings.outputLanguage
-
-    state.isPrewarming = true
+    let isAIMode = state.isAIMode
+    let startTime = state.recordingStartTime ?? Date()
     
     return .run { send in
-      do {
-        await soundEffect.play(.stopRecording)
-        let audioURL = await recording.stopRecording()
-
-        // Create transcription options with the selected language
-        let decodeOptions = DecodingOptions(
-          language: language,
-          detectLanguage: language == nil, // Only auto-detect if no language specified
-          chunkingStrategy: .vad
-        )
-        
-        let result = try await transcription.transcribe(audioURL, model, decodeOptions) { _ in }
-        
-        print("Transcribed audio from URL: \(audioURL) to text: \(result)")
-        await send(.transcriptionResult(result))
-      } catch {
-        print("Error transcribing audio: \(error)")
-        await send(.transcriptionError(error))
-      }
+      await soundEffect.play(.stopRecording)
+      let audioURL = await recording.stopRecording()
+      
+      let queuedTranscription = QueuedTranscription(
+        audioURL: audioURL,
+        startTime: startTime,
+        isAIMode: isAIMode,
+        model: model,
+        language: language
+      )
+      
+      await send(.queueTranscription(queuedTranscription))
     }
-    .cancellable(id: CancelID.transcription)
   }
 }
 
@@ -532,6 +590,76 @@ private extension TranscriptionFeature {
       }
     }
   }
+  
+  // MARK: - Queue Processing Handlers
+  
+  func handleQueueTranscriptionResult(
+    _ state: inout State,
+    id: UUID,
+    result: String
+  ) -> Effect<Action> {
+    // Find the processed item to get its settings
+    guard let processedItem = state.transcriptionQueue.first(where: { $0.id == id }) else {
+      // Item not found, just continue processing
+      return .send(.startProcessingQueue)
+    }
+    
+    // Remove the processed item from queue
+    state.transcriptionQueue.removeAll { $0.id == id }
+    
+    // Handle the result based on whether it was AI mode
+    if processedItem.isAIMode && !result.isEmpty {
+      state.isGeneratingAI = true
+      let model = state.hexSettings.selectedOllamaModel
+      let systemPrompt = state.hexSettings.ollamaSystemPrompt
+      
+      let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
+      let aiGeneration = Effect.run { send in
+        do {
+          let response = try await ollama.generate(result, model, systemPrompt)
+          await send(.aiResponseReceived(response))
+        } catch {
+          await send(.aiGenerationError(error))
+        }
+      }
+      
+      return .merge(continueProcessing, aiGeneration)
+    } else if !result.isEmpty {
+      // Normal transcription mode - paste the text
+      let duration = processedItem.startTime.timeIntervalSinceNow * -1
+      
+      let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
+      let finalizeEffect = finalizeRecordingAndStoreTranscript(
+        result: result,
+        duration: duration,
+        transcriptionHistory: state.$transcriptionHistory
+      )
+      
+      return .merge(continueProcessing, finalizeEffect)
+    } else {
+      // Empty result, just continue
+      return .send(.startProcessingQueue)
+    }
+  }
+  
+  func handleQueueTranscriptionError(
+    _ state: inout State,
+    id: UUID,
+    error: Error
+  ) -> Effect<Action> {
+    // Remove the failed item from queue
+    state.transcriptionQueue.removeAll { $0.id == id }
+    
+    // Show error and continue processing
+    state.error = error.localizedDescription
+    
+    return .merge(
+      .run { _ in
+        await soundEffect.play(.cancel)
+      },
+      .send(.startProcessingQueue)
+    )
+  }
 }
 
 // MARK: - Cancel Handler
@@ -543,16 +671,28 @@ private extension TranscriptionFeature {
     state.isPrewarming = false
     state.isAIMode = false
     state.isGeneratingAI = false
+    state.isProcessingQueue = false
+    
+    // Clear the transcription queue and clean up audio files
+    let audioURLsToClean = state.transcriptionQueue.map(\.audioURL)
+    state.transcriptionQueue.removeAll()
 
     // Allow system to sleep again if it was prevented
     reallowSystemSleep(&state)
 
     return .merge(
       .cancel(id: CancelID.transcription),
+      .cancel(id: CancelID.queueProcessing),
       .cancel(id: CancelID.delayedRecord),
       .run { _ in
         // Stop recording to properly release the microphone
         _ = await recording.stopRecording()
+        
+        // Clean up queued audio files
+        for url in audioURLsToClean {
+          try? FileManager.default.removeItem(at: url)
+        }
+        
         if playSound {
           await soundEffect.play(.cancel)
         }
@@ -595,13 +735,21 @@ struct TranscriptionView: View {
   @Bindable var store: StoreOf<TranscriptionFeature>
   @ObserveInjection var inject
 
-  var status: TranscriptionIndicatorView.Status {
+  var recordingStatus: TranscriptionIndicatorView.Status {
+    if store.isRecording {
+      return store.isAIMode ? .aiRecording : .recording
+    } else {
+      return .hidden
+    }
+  }
+  
+  var transcribingStatus: TranscriptionIndicatorView.Status {
     if store.needsModel {
       return .needsModel
     } else if store.isTranscribing || store.isGeneratingAI {
-      return store.isAIMode ? .aiTranscribing : .transcribing
-    } else if store.isRecording {
-      return store.isAIMode ? .aiRecording : .recording
+      // For queue processing, we need to determine AI mode from the first queued item
+      let isAIMode = store.transcriptionQueue.first?.isAIMode ?? store.isAIMode
+      return isAIMode ? .aiTranscribing : .transcribing
     } else if store.isPrewarming {
       return .prewarming
     } else if store.aiResponse != nil {
@@ -610,16 +758,35 @@ struct TranscriptionView: View {
       return .hidden
     }
   }
+  
+  var shouldShowBoth: Bool {
+    recordingStatus != .hidden && transcribingStatus != .hidden
+  }
 
   var body: some View {
-    TranscriptionIndicatorView(
-      status: status,
-      meter: store.meter,
-      aiResponse: store.aiResponse,
-      onDismissAI: {
-        store.send(.clearAIResponse)
+    HStack(spacing: 8) {
+      // Recording orb (if recording)
+      if recordingStatus != .hidden {
+        TranscriptionIndicatorView(
+          status: recordingStatus,
+          meter: store.meter,
+          aiResponse: nil,
+          onDismissAI: {}
+        )
       }
-    )
+      
+      // Transcribing orb (if transcribing/processing)
+      if transcribingStatus != .hidden {
+        TranscriptionIndicatorView(
+          status: transcribingStatus,
+          meter: store.meter,
+          aiResponse: store.aiResponse,
+          onDismissAI: {
+            store.send(.clearAIResponse)
+          }
+        )
+      }
+    }
     .task {
       await store.send(.task).finish()
     }
