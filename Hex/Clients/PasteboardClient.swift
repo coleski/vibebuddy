@@ -38,15 +38,53 @@ extension DependencyValues {
     }
 }
 
-struct PasteboardClientLive {
+actor PasteboardClientLive {
     @Shared(.hexSettings) var hexSettings: HexSettings
+    
+    // Queue to ensure paste operations happen sequentially
+    private var pasteQueue: [String] = []
+    private var isProcessingQueue = false
 
-    @MainActor
     func paste(text: String) async {
-        if hexSettings.useClipboardPaste {
-            await pasteWithClipboard(text)
+        // Add to queue and process
+        pasteQueue.append(text)
+        await processQueue()
+    }
+    
+    private func processQueue() async {
+        // Prevent concurrent processing
+        guard !isProcessingQueue else { return }
+        guard !pasteQueue.isEmpty else { return }
+        
+        isProcessingQueue = true
+        
+        while !pasteQueue.isEmpty {
+            let text = pasteQueue.removeFirst()
+            await performPaste(text: text)
+            
+            // Small delay between pastes to avoid conflicts
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        
+        isProcessingQueue = false
+    }
+    
+    private func performPaste(text: String) async {
+        // Get the setting values in actor context
+        let useClipboard = hexSettings.useClipboardPaste
+        let copyToClipboard = hexSettings.copyToClipboard
+        
+        print("[PasteboardClient] performPaste called with useClipboard: \(useClipboard), copyToClipboard: \(copyToClipboard)")
+        
+        // Perform the paste operation on main actor
+        if useClipboard {
+            print("[PasteboardClient] Using clipboard paste")
+            await pasteWithClipboard(text, copyToClipboard: copyToClipboard)
         } else {
-            simulateTypingWithAppleScript(text)
+            print("[PasteboardClient] Using simulated typing")
+            await MainActor.run {
+                simulateTypingWithAppleScript(text)
+            }
         }
     }
     
@@ -58,6 +96,7 @@ struct PasteboardClientLive {
     }
 
     // Function to save the current state of the NSPasteboard
+    @MainActor
     func savePasteboardState(pasteboard: NSPasteboard) -> [[String: Any]] {
         var savedItems: [[String: Any]] = []
         
@@ -75,6 +114,7 @@ struct PasteboardClientLive {
     }
 
     // Function to restore the saved state of the NSPasteboard
+    @MainActor
     func restorePasteboardState(pasteboard: NSPasteboard, savedItems: [[String: Any]]) {
         pasteboard.clearContents()
         
@@ -91,6 +131,7 @@ struct PasteboardClientLive {
 
     /// Pastes current clipboard content to the frontmost application
     static func pasteToFrontmostApp() -> Bool {
+        print("[PasteboardClient] pasteToFrontmostApp() called")
         let script = """
         tell application "System Events"
             tell process (name of first application process whose frontmost is true)
@@ -123,69 +164,87 @@ struct PasteboardClientLive {
         
         var error: NSDictionary?
         if let scriptObject = NSAppleScript(source: script) {
+            print("[PasteboardClient] About to execute AppleScript")
             let result = scriptObject.executeAndReturnError(&error)
             if let error = error {
-                print("Error executing paste: \(error)")
+                print("[PasteboardClient] AppleScript error: \(error)")
                 return false
             }
-            return result.booleanValue
+            let success = result.booleanValue
+            print("[PasteboardClient] AppleScript result: \(success)")
+            return success
         }
+        print("[PasteboardClient] Failed to create AppleScript object")
         return false
     }
 
-    func pasteWithClipboard(_ text: String) async {
+    @MainActor
+    func pasteWithClipboard(_ text: String, copyToClipboard: Bool) async {
+        print("[PasteboardClient] pasteWithClipboard started for text: '\(text)'")
         let pasteboard = NSPasteboard.general
-        let originalItems = savePasteboardState(pasteboard: pasteboard)
+        let originalItems = await savePasteboardState(pasteboard: pasteboard)
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+        print("[PasteboardClient] Set text to pasteboard")
 
         let source = CGEventSource(stateID: .combinedSessionState)
         
         // Track if paste operation successful
+        print("[PasteboardClient] Attempting to paste to frontmost app")
         var pasteSucceeded = PasteboardClientLive.pasteToFrontmostApp()
+        print("[PasteboardClient] Paste to frontmost app result: \(pasteSucceeded)")
         
         // If menu-based paste failed, try simulated keypresses
         if !pasteSucceeded {
-            print("Failed to paste to frontmost app, falling back to simulated keypresses")
+            print("[PasteboardClient] AppleScript paste failed, falling back to simulated Cmd+V keypresses")
             let vKeyCode = Sauce.shared.keyCode(for: .v)
             let cmdKeyCode: CGKeyCode = 55 // Command key
+            
+            print("[PasteboardClient] vKeyCode: \(vKeyCode), cmdKeyCode: \(cmdKeyCode)")
 
             // Create cmd down event
             let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: true)
+            print("[PasteboardClient] Created cmdDown event: \(cmdDown != nil)")
 
             // Create v down event
             let vDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true)
             vDown?.flags = .maskCommand
+            print("[PasteboardClient] Created vDown event: \(vDown != nil)")
 
             // Create v up event
             let vUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
             vUp?.flags = .maskCommand
+            print("[PasteboardClient] Created vUp event: \(vUp != nil)")
 
             // Create cmd up event
             let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: false)
+            print("[PasteboardClient] Created cmdUp event: \(cmdUp != nil)")
 
             // Post the events
+            print("[PasteboardClient] Posting keyboard events...")
             cmdDown?.post(tap: .cghidEventTap)
             vDown?.post(tap: .cghidEventTap)
             vUp?.post(tap: .cghidEventTap)
             cmdUp?.post(tap: .cghidEventTap)
+            print("[PasteboardClient] Keyboard events posted")
             
             // Assume keypress-based paste succeeded - but text will remain in clipboard as fallback
             pasteSucceeded = true
+            print("[PasteboardClient] Marked simulated keypress as succeeded")
         }
         
         // Only restore original pasteboard contents if:
         // 1. Copying to clipboard is disabled AND
         // 2. The paste operation succeeded
-        if !hexSettings.copyToClipboard && pasteSucceeded {
+        if !copyToClipboard && pasteSucceeded {
             try? await Task.sleep(for: .seconds(0.1))
             pasteboard.clearContents()
-            restorePasteboardState(pasteboard: pasteboard, savedItems: originalItems)
+            await restorePasteboardState(pasteboard: pasteboard, savedItems: originalItems)
         }
         
         // If we failed to paste AND user doesn't want clipboard retention,
         // show a notification that text is available in clipboard
-        if !pasteSucceeded && !hexSettings.copyToClipboard {
+        if !pasteSucceeded && !copyToClipboard {
             // Keep the transcribed text in clipboard regardless of setting
             print("Paste operation failed. Text remains in clipboard as fallback.")
             
@@ -194,13 +253,25 @@ struct PasteboardClientLive {
         }
     }
     
+    @MainActor  
     func simulateTypingWithAppleScript(_ text: String) {
+        let typingStart = Date()
+        print("[TIMING] AppleScript typing started at \(typingStart) for text: '\(text)'")
+        
         let escapedText = text.replacingOccurrences(of: "\"", with: "\\\"")
-        let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"\(escapedText)\"")
+        let scriptSource = "tell application \"System Events\" to keystroke \"\(escapedText)\""
+        let script = NSAppleScript(source: scriptSource)
         var error: NSDictionary?
+        
         script?.executeAndReturnError(&error)
+        
+        let typingEnd = Date()
+        let typingTime = typingEnd.timeIntervalSince(typingStart)
+        
         if let error = error {
-            print("Error executing AppleScript: \(error)")
+            print("[TIMING] AppleScript typing failed in \(String(format: "%.2f", typingTime))s: \(error)")
+        } else {
+            print("[TIMING] AppleScript typing completed in \(String(format: "%.2f", typingTime))s")
         }
     }
 
