@@ -23,6 +23,26 @@ struct QueuedTranscription: Identifiable, Equatable {
   let language: String?
 }
 
+enum TranscriptionError: Error, LocalizedError {
+  case audioFileNotFound(URL)
+  case modelNotAvailable(String)
+  case transcriptionFailed(String)
+  case pasteOperationFailed(String)
+  
+  var errorDescription: String? {
+    switch self {
+    case .audioFileNotFound(let url):
+      return "Audio file not found: \(url.lastPathComponent)"
+    case .modelNotAvailable(let model):
+      return "Transcription model '\(model)' is not available"
+    case .transcriptionFailed(let reason):
+      return "Transcription failed: \(reason)"
+    case .pasteOperationFailed(let reason):
+      return "Paste operation failed: \(reason)"
+    }
+  }
+}
+
 @Reducer
 struct TranscriptionFeature {
   @ObservableState
@@ -42,6 +62,7 @@ struct TranscriptionFeature {
     // Queue management
     var transcriptionQueue: [QueuedTranscription] = []
     var isProcessingQueue: Bool = false
+    static let maxQueueSize = 10 // Prevent memory issues with too many concurrent recordings
     
     @Shared(.hexSettings) var hexSettings: HexSettings
     @Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
@@ -176,29 +197,88 @@ struct TranscriptionFeature {
       // MARK: - Queue Management
       
       case let .queueTranscription(queuedTranscription):
+        print("[QUEUE] Adding item to queue: ID \(queuedTranscription.id), AI Mode: \(queuedTranscription.isAIMode)")
+        
+        // Check if queue is at maximum capacity
+        if state.transcriptionQueue.count >= State.maxQueueSize {
+          print("[QUEUE] Queue at maximum capacity (\(State.maxQueueSize)), discarding oldest item")
+          if let oldestItem = state.transcriptionQueue.first {
+            // Clean up the oldest audio file
+            let cleanupEffect = Effect<Action>.run { _ in
+              do {
+                try FileManager.default.removeItem(at: oldestItem.audioURL)
+                print("[QUEUE] Cleaned up oldest audio file: \(oldestItem.audioURL.lastPathComponent)")
+              } catch {
+                print("[QUEUE] Failed to clean up oldest audio file: \(error)")
+              }
+            }
+            state.transcriptionQueue.removeFirst()
+            
+            // Add new item and start cleanup
+            state.transcriptionQueue.append(queuedTranscription)
+            
+            return .merge(
+              cleanupEffect,
+              state.isProcessingQueue ? .none : .send(.startProcessingQueue)
+            )
+          }
+        }
+        
         state.transcriptionQueue.append(queuedTranscription)
+        print("[QUEUE] Queue size after adding: \(state.transcriptionQueue.count)")
+        print("[QUEUE] Currently processing queue: \(state.isProcessingQueue)")
+        
         // Start processing queue if not already processing
         if !state.isProcessingQueue {
+          print("[QUEUE] Starting queue processing...")
           return .send(.startProcessingQueue)
         }
+        print("[QUEUE] Queue processing already in progress")
         return .none
         
       case .startProcessingQueue:
+        print("[QUEUE] startProcessingQueue called - queue size: \(state.transcriptionQueue.count)")
+        print("[QUEUE] isProcessingQueue: \(state.isProcessingQueue)")
+        
         guard !state.transcriptionQueue.isEmpty else {
+          print("[QUEUE] Queue is empty - stopping processing")
           state.isProcessingQueue = false
           state.isTranscribing = false
           state.isPrewarming = false
           return .none
         }
         
+        // Prevent concurrent processing
+        guard !state.isProcessingQueue else {
+          print("[QUEUE] Queue processing already in progress - ignoring duplicate call")
+          return .none
+        }
+        
+        print("[QUEUE] Starting queue processing")
         state.isProcessingQueue = true
         state.isTranscribing = true
         state.isPrewarming = true
         
         let queuedItem = state.transcriptionQueue[0]
+        print("[QUEUE] Processing item ID: \(queuedItem.id), AI Mode: \(queuedItem.isAIMode), Model: \(queuedItem.model)")
         
         return .run { send in
           do {
+            let startTime = Date()
+            print("[QUEUE] Starting transcription for queued audio at \(startTime)")
+            print("[QUEUE] Audio URL: \(queuedItem.audioURL.lastPathComponent)")
+            
+            // Check if audio file still exists
+            guard FileManager.default.fileExists(atPath: queuedItem.audioURL.path) else {
+              throw TranscriptionError.audioFileNotFound(queuedItem.audioURL)
+            }
+            
+            // Check if model is still available (it might have been deleted)
+            let isModelAvailable = await transcription.isModelDownloaded(queuedItem.model)
+            guard isModelAvailable else {
+              throw TranscriptionError.modelNotAvailable(queuedItem.model)
+            }
+            
             // Create transcription options with the selected language
             let decodeOptions = DecodingOptions(
               language: queuedItem.language,
@@ -206,12 +286,16 @@ struct TranscriptionFeature {
               chunkingStrategy: .vad
             )
             
+            let transcriptionStart = Date()
             let result = try await transcription.transcribe(queuedItem.audioURL, queuedItem.model, decodeOptions) { _ in }
+            let transcriptionEnd = Date()
+            let transcriptionTime = transcriptionEnd.timeIntervalSince(transcriptionStart)
             
-            print("Transcribed queued audio from URL: \(queuedItem.audioURL) to text: \(result)")
+            print("[QUEUE] Transcription completed in \(String(format: "%.2f", transcriptionTime))s: '\(result)'")
+            print("[QUEUE] Sending transcription result at \(transcriptionEnd)")
             await send(.transcriptionQueueResult(id: queuedItem.id, result: result))
           } catch {
-            print("Error transcribing queued audio: \(error)")
+            print("[QUEUE] Error transcribing queued audio: \(error)")
             await send(.transcriptionQueueError(id: queuedItem.id, error: error))
           }
         }
@@ -232,6 +316,10 @@ struct TranscriptionFeature {
       case let .aiResponseReceived(response):
         state.aiResponse = response
         state.isGeneratingAI = false
+        
+        // AI responses are only displayed in modal, never automatically pasted
+        // The user must manually copy/paste from the modal
+        print("[AI] AI response received and displayed in modal: '\(response)'")
         return .none
         
       case let .aiGenerationError(error):
@@ -615,6 +703,9 @@ private extension TranscriptionFeature {
     transcriptionHistory: Shared<TranscriptionHistory>
   ) -> Effect<Action> {
     .run { send in
+      let finalizeStart = Date()
+      print("[TIMING] finalizeQueuedTranscript started at \(finalizeStart)")
+      
       do {
         @Shared(.hexSettings) var hexSettings: HexSettings
 
@@ -667,10 +758,18 @@ private extension TranscriptionFeature {
         }
 
         // Paste text (and copy if enabled via pasteWithClipboard)
-        print("[TranscriptionFeature] finalizeQueuedTranscript about to paste result: '\(result)'")
+        let pasteStart = Date()
+        print("[TIMING] Starting paste operation at \(pasteStart)")
         await pasteboard.paste(result)
-        print("[TranscriptionFeature] finalizeQueuedTranscript paste completed, playing sound")
+        let pasteEnd = Date()
+        let pasteTime = pasteEnd.timeIntervalSince(pasteStart)
+        print("[TIMING] Paste completed in \(String(format: "%.2f", pasteTime))s at \(pasteEnd)")
+        
         await soundEffect.play(.pasteTranscript)
+        
+        let finalizeEnd = Date()
+        let totalFinalizeTime = finalizeEnd.timeIntervalSince(finalizeStart)
+        print("[TIMING] finalizeQueuedTranscript total time: \(String(format: "%.2f", totalFinalizeTime))s")
       } catch {
         await send(.transcriptionError(error))
       }
@@ -684,23 +783,27 @@ private extension TranscriptionFeature {
     id: UUID,
     result: String
   ) -> Effect<Action> {
+    let handleStart = Date()
+    print("[QUEUE] handleQueueTranscriptionResult started at \(handleStart) for item ID: \(id)")
+    print("[QUEUE] Current queue size: \(state.transcriptionQueue.count)")
+    print("[QUEUE] Transcription result: '\(result)' (length: \(result.count))")
+    
     // Find the processed item to get its settings
-    guard let processedItem = state.transcriptionQueue.first(where: { $0.id == id }) else {
-      // Item not found, just continue processing
+    guard let processedItemIndex = state.transcriptionQueue.firstIndex(where: { $0.id == id }) else {
+      print("[QUEUE] ERROR: Item with ID \(id) not found in queue - continuing processing")
       return .send(.startProcessingQueue)
     }
     
-    // Remove the processed item from queue
-    state.transcriptionQueue.removeAll { $0.id == id }
+    let processedItem = state.transcriptionQueue[processedItemIndex]
+    print("[QUEUE] Found processed item: AI Mode: \(processedItem.isAIMode), Model: \(processedItem.model)")
     
-    // Clean up the temporary audio file
-    let audioURL = processedItem.audioURL
-    let cleanupEffect: Effect<Action> = .run { _ in
-      try? FileManager.default.removeItem(at: audioURL)
-    }
+    // Remove the processed item from queue
+    state.transcriptionQueue.remove(at: processedItemIndex)
+    print("[QUEUE] Removed item from queue. New queue size: \(state.transcriptionQueue.count)")
     
     // Handle the result based on whether it was AI mode
     if processedItem.isAIMode && !result.isEmpty {
+      print("[QUEUE] Processing AI mode result - starting AI generation")
       state.isGeneratingAI = true
       let model = state.hexSettings.selectedOllamaModel
       let systemPrompt = state.hexSettings.ollamaSystemPrompt
@@ -708,16 +811,19 @@ private extension TranscriptionFeature {
       let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
       let aiGeneration = Effect.run { send in
         do {
+          print("[QUEUE] Generating AI response with model: \(model)")
           let response = try await ollama.generate(result, model, systemPrompt)
+          print("[QUEUE] AI response received: '\(response)'")
           await send(Action.aiResponseReceived(response))
         } catch {
+          print("[QUEUE] AI generation error: \(error)")
           await send(Action.aiGenerationError(error))
         }
       }
       
-      return .merge(cleanupEffect, continueProcessing, aiGeneration)
+      return .merge(continueProcessing, aiGeneration)
     } else if !result.isEmpty {
-      // Normal transcription mode - paste the text
+      print("[QUEUE] Processing normal transcription mode - preparing to paste text")
       let duration = processedItem.startTime.timeIntervalSinceNow * -1
       
       let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
@@ -728,9 +834,18 @@ private extension TranscriptionFeature {
         transcriptionHistory: state.$transcriptionHistory
       )
       
-      return .merge(cleanupEffect, continueProcessing, finalizeEffect)
+      print("[QUEUE] Dispatching finalize effect and continue processing")
+      return .merge(continueProcessing, finalizeEffect)
     } else {
-      // Empty result, just continue
+      print("[QUEUE] Empty result - cleaning up and continuing")
+      let cleanupEffect: Effect<Action> = .run { _ in
+        do {
+          try FileManager.default.removeItem(at: processedItem.audioURL)
+          print("[QUEUE] Successfully cleaned up audio file: \(processedItem.audioURL.lastPathComponent)")
+        } catch {
+          print("[QUEUE] Failed to clean up audio file: \(error)")
+        }
+      }
       return .merge(cleanupEffect, .send(.startProcessingQueue))
     }
   }
@@ -740,19 +855,31 @@ private extension TranscriptionFeature {
     id: UUID,
     error: Error
   ) -> Effect<Action> {
+    print("[QUEUE] handleQueueTranscriptionError for item ID: \(id), error: \(error)")
+    print("[QUEUE] Current queue size before removal: \(state.transcriptionQueue.count)")
+    
     // Find and remove the failed item from queue
     let failedItem = state.transcriptionQueue.first { $0.id == id }
     state.transcriptionQueue.removeAll { $0.id == id }
     
+    print("[QUEUE] Queue size after removal: \(state.transcriptionQueue.count)")
+    
     // Clean up the temporary audio file if we found the item
     let cleanupEffect: Effect<Action> = failedItem.map { item in
       Effect<Action>.run { _ in
-        try? FileManager.default.removeItem(at: item.audioURL)
+        do {
+          try FileManager.default.removeItem(at: item.audioURL)
+          print("[QUEUE] Successfully cleaned up failed audio file: \(item.audioURL.lastPathComponent)")
+        } catch {
+          print("[QUEUE] Failed to clean up audio file: \(error)")
+        }
       }
     } ?? .none
     
     // Show error and continue processing
     state.error = error.localizedDescription
+    
+    print("[QUEUE] Continuing queue processing after error")
     
     return .merge(
       cleanupEffect,

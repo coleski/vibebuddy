@@ -46,37 +46,26 @@ actor PasteboardClientLive {
     private var isProcessingQueue = false
 
     func paste(text: String) async {
-        print("[PasteboardClient] Adding text to paste queue: '\(text)'")
         // Add to queue and process
         pasteQueue.append(text)
         await processQueue()
     }
     
     private func processQueue() async {
-        print("[PasteboardClient] processQueue called, isProcessingQueue: \(isProcessingQueue), queue count: \(pasteQueue.count)")
         // Prevent concurrent processing
-        guard !isProcessingQueue else { 
-            print("[PasteboardClient] Already processing queue, returning")
-            return 
-        }
-        guard !pasteQueue.isEmpty else { 
-            print("[PasteboardClient] Queue is empty, returning")
-            return 
-        }
+        guard !isProcessingQueue else { return }
+        guard !pasteQueue.isEmpty else { return }
         
-        print("[PasteboardClient] Starting queue processing")
         isProcessingQueue = true
         
         while !pasteQueue.isEmpty {
             let text = pasteQueue.removeFirst()
-            print("[PasteboardClient] Processing paste for text: '\(text)'")
             await performPaste(text: text)
             
             // Small delay between pastes to avoid conflicts
             try? await Task.sleep(for: .milliseconds(100))
         }
         
-        print("[PasteboardClient] Finished queue processing")
         isProcessingQueue = false
     }
     
@@ -142,6 +131,7 @@ actor PasteboardClientLive {
 
     /// Pastes current clipboard content to the frontmost application
     static func pasteToFrontmostApp() -> Bool {
+        print("[PasteboardClient] pasteToFrontmostApp() called")
         let script = """
         tell application "System Events"
             tell process (name of first application process whose frontmost is true)
@@ -174,13 +164,17 @@ actor PasteboardClientLive {
         
         var error: NSDictionary?
         if let scriptObject = NSAppleScript(source: script) {
+            print("[PasteboardClient] About to execute AppleScript")
             let result = scriptObject.executeAndReturnError(&error)
             if let error = error {
-                print("Error executing paste: \(error)")
+                print("[PasteboardClient] AppleScript error: \(error)")
                 return false
             }
-            return result.booleanValue
+            let success = result.booleanValue
+            print("[PasteboardClient] AppleScript result: \(success)")
+            return success
         }
+        print("[PasteboardClient] Failed to create AppleScript object")
         return false
     }
 
@@ -202,32 +196,41 @@ actor PasteboardClientLive {
         
         // If menu-based paste failed, try simulated keypresses
         if !pasteSucceeded {
-            print("Failed to paste to frontmost app, falling back to simulated keypresses")
+            print("[PasteboardClient] AppleScript paste failed, falling back to simulated Cmd+V keypresses")
             let vKeyCode = Sauce.shared.keyCode(for: .v)
             let cmdKeyCode: CGKeyCode = 55 // Command key
+            
+            print("[PasteboardClient] vKeyCode: \(vKeyCode), cmdKeyCode: \(cmdKeyCode)")
 
             // Create cmd down event
             let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: true)
+            print("[PasteboardClient] Created cmdDown event: \(cmdDown != nil)")
 
             // Create v down event
             let vDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true)
             vDown?.flags = .maskCommand
+            print("[PasteboardClient] Created vDown event: \(vDown != nil)")
 
             // Create v up event
             let vUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
             vUp?.flags = .maskCommand
+            print("[PasteboardClient] Created vUp event: \(vUp != nil)")
 
             // Create cmd up event
             let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: false)
+            print("[PasteboardClient] Created cmdUp event: \(cmdUp != nil)")
 
             // Post the events
+            print("[PasteboardClient] Posting keyboard events...")
             cmdDown?.post(tap: .cghidEventTap)
             vDown?.post(tap: .cghidEventTap)
             vUp?.post(tap: .cghidEventTap)
             cmdUp?.post(tap: .cghidEventTap)
+            print("[PasteboardClient] Keyboard events posted")
             
             // Assume keypress-based paste succeeded - but text will remain in clipboard as fallback
             pasteSucceeded = true
+            print("[PasteboardClient] Marked simulated keypress as succeeded")
         }
         
         // Only restore original pasteboard contents if:
@@ -252,15 +255,23 @@ actor PasteboardClientLive {
     
     @MainActor  
     func simulateTypingWithAppleScript(_ text: String) {
-        print("[PasteboardClient] simulateTypingWithAppleScript called for text: '\(text)'")
+        let typingStart = Date()
+        print("[TIMING] AppleScript typing started at \(typingStart) for text: '\(text)'")
+        
         let escapedText = text.replacingOccurrences(of: "\"", with: "\\\"")
-        let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"\(escapedText)\"")
+        let scriptSource = "tell application \"System Events\" to keystroke \"\(escapedText)\""
+        let script = NSAppleScript(source: scriptSource)
         var error: NSDictionary?
+        
         script?.executeAndReturnError(&error)
+        
+        let typingEnd = Date()
+        let typingTime = typingEnd.timeIntervalSince(typingStart)
+        
         if let error = error {
-            print("[PasteboardClient] Error executing AppleScript: \(error)")
+            print("[TIMING] AppleScript typing failed in \(String(format: "%.2f", typingTime))s: \(error)")
         } else {
-            print("[PasteboardClient] AppleScript typing completed successfully")
+            print("[TIMING] AppleScript typing completed in \(String(format: "%.2f", typingTime))s")
         }
     }
 
