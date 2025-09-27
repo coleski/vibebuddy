@@ -1,5 +1,6 @@
 # vibebuddy
 
+THOUGHT --> CODE
 this is your vibecoding buddy. his name is Buddy. he's a great listener.
 
 - press **OPTION** for him to listen
