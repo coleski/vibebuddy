@@ -278,6 +278,9 @@ actor RecordingClientLive {
   private var isCurrentlyRecording: Bool = false // Explicit recording state
   private let (meterStream, meterContinuation) = AsyncStream<Meter>.makeStream()
   private var meterTask: Task<Void, Never>?
+  
+  // Mutex to prevent concurrent start/stop operations
+  private var recordingOperationInProgress: Bool = false
     
   @Shared(.hexSettings) var hexSettings: HexSettings
 
@@ -481,11 +484,21 @@ actor RecordingClientLive {
   }
 
   func startRecording() async -> Bool {
+    // Check if another operation is in progress
+    if recordingOperationInProgress {
+      print("[RECORDING] Another recording operation in progress, ignoring request")
+      return false
+    }
+    
     // If already recording, ignore the request
     if isCurrentlyRecording {
       print("Recording already in progress, ignoring new recording request")
       return false
     }
+    
+    // Mark operation as in progress
+    recordingOperationInProgress = true
+    defer { recordingOperationInProgress = false }
     
     // Generate a unique filename for this recording
     let timestamp = Int(Date().timeIntervalSince1970 * 1000) // milliseconds for uniqueness
@@ -556,10 +569,27 @@ actor RecordingClientLive {
   }
 
   func stopRecording() async -> URL {
+    // Check if another operation is in progress
+    if recordingOperationInProgress {
+      print("[RECORDING] Another recording operation in progress, waiting...")
+      // Wait a bit for the operation to complete
+      try? await Task.sleep(for: .milliseconds(100))
+    }
+    
+    // Mark operation as in progress
+    recordingOperationInProgress = true
+    defer { recordingOperationInProgress = false }
+    
     // Capture the URL for this recording session before clearing state
     let recordingURL = recorderURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("recording.wav")
     
     print("Stopping recording, returning URL: \(recordingURL.lastPathComponent)")
+    
+    // Validate we actually have a recording to stop
+    guard isCurrentlyRecording, recorder != nil else {
+      print("[RECORDING] WARNING: No active recording to stop")
+      return recordingURL
+    }
     
     recorder?.stop()
     recorder = nil

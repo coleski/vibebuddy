@@ -21,6 +21,7 @@ struct QueuedTranscription: Identifiable, Equatable {
   let isAIMode: Bool
   let model: String
   let language: String?
+  let wasAddedToActiveQueue: Bool // True if queue was already processing when added
 }
 
 enum TranscriptionError: Error, LocalizedError {
@@ -141,6 +142,16 @@ struct TranscriptionFeature {
 
       case let .hotKeyPressed(isAIMode):
         // Start recording - allow during transcription but not during another recording
+        print("[HOTKEY] Hot key pressed - AI Mode: \(isAIMode)")
+        print("[HOTKEY] Current state - isRecording: \(state.isRecording), isTranscribing: \(state.isTranscribing), isProcessingQueue: \(state.isProcessingQueue)")
+        print("[HOTKEY] Queue size: \(state.transcriptionQueue.count)")
+        print("[HOTKEY] Thread: \(Thread.current)")
+        
+        // Check for potential conflicts
+        if state.isRecording {
+            print("[HOTKEY] WARNING: Already recording! This might cause conflicts.")
+        }
+        
         state.isAIMode = isAIMode
         return handleHotKeyPressed(minimumKeyTime: state.hexSettings.minimumKeyTime)
 
@@ -152,10 +163,22 @@ struct TranscriptionFeature {
       // MARK: - Recording Flow
 
       case .startRecording:
+        print("[RECORDING] startRecording action received")
+        print("[RECORDING] Current state - isRecording: \(state.isRecording), isTranscribing: \(state.isTranscribing)")
+        print("[RECORDING] Thread: \(Thread.current)")
+        
+        // Safety check - prevent concurrent recordings
+        guard !state.isRecording else {
+            print("[RECORDING] ERROR: Attempted to start recording while already recording! Ignoring.")
+            return .none
+        }
+        
         // First check if model is available
         let model = state.hexSettings.selectedModel
+        print("[RECORDING] Checking model availability: \(model)")
         return .run { send in
           let isModelAvailable = await transcription.isModelDownloaded(model)
+          print("[RECORDING] Model \(model) availability: \(isModelAvailable)")
           await send(.modelCheckResult(isModelAvailable))
         }
         
@@ -184,6 +207,15 @@ struct TranscriptionFeature {
         return .none
 
       case .stopRecording:
+        print("[RECORDING] stopRecording action received")
+        print("[RECORDING] Current state - isRecording: \(state.isRecording), duration: \(state.recordingStartTime.map { Date().timeIntervalSince($0) } ?? 0)s")
+        print("[RECORDING] Thread: \(Thread.current)")
+        
+        guard state.isRecording else {
+            print("[RECORDING] WARNING: Attempted to stop recording when not recording! Ignoring.")
+            return .none
+        }
+        
         return handleStopRecording(&state)
 
       // MARK: - Transcription Results
@@ -198,6 +230,9 @@ struct TranscriptionFeature {
       
       case let .queueTranscription(queuedTranscription):
         print("[QUEUE] Adding item to queue: ID \(queuedTranscription.id), AI Mode: \(queuedTranscription.isAIMode)")
+        print("[QUEUE] Audio file: \(queuedTranscription.audioURL.lastPathComponent)")
+        print("[QUEUE] Current thread: \(Thread.current)")
+        print("[QUEUE] State before adding - isProcessingQueue: \(state.isProcessingQueue), isTranscribing: \(state.isTranscribing), isRecording: \(state.isRecording)")
         
         // Check if queue is at maximum capacity
         if state.transcriptionQueue.count >= State.maxQueueSize {
@@ -227,6 +262,7 @@ struct TranscriptionFeature {
         state.transcriptionQueue.append(queuedTranscription)
         print("[QUEUE] Queue size after adding: \(state.transcriptionQueue.count)")
         print("[QUEUE] Currently processing queue: \(state.isProcessingQueue)")
+        print("[QUEUE] Full queue state: \(state.transcriptionQueue.map { "ID: \($0.id), AI: \($0.isAIMode), File: \($0.audioURL.lastPathComponent)" })")
         
         // Start processing queue if not already processing
         if !state.isProcessingQueue {
@@ -239,12 +275,20 @@ struct TranscriptionFeature {
       case .startProcessingQueue:
         print("[QUEUE] startProcessingQueue called - queue size: \(state.transcriptionQueue.count)")
         print("[QUEUE] isProcessingQueue: \(state.isProcessingQueue)")
+        print("[QUEUE] Current state snapshot:")
+        print("[QUEUE]   - isRecording: \(state.isRecording)")
+        print("[QUEUE]   - isTranscribing: \(state.isTranscribing)")
+        print("[QUEUE]   - isPrewarming: \(state.isPrewarming)")
+        print("[QUEUE]   - isProcessingQueue: \(state.isProcessingQueue)")
         
         guard !state.transcriptionQueue.isEmpty else {
           print("[QUEUE] Queue is empty - stopping processing")
+          print("[QUEUE] Resetting all processing states")
           state.isProcessingQueue = false
+          // Clear transcribing indicators since queue is done
           state.isTranscribing = false
           state.isPrewarming = false
+          state.isGeneratingAI = false
           return .none
         }
         
@@ -261,6 +305,8 @@ struct TranscriptionFeature {
         
         let queuedItem = state.transcriptionQueue[0]
         print("[QUEUE] Processing item ID: \(queuedItem.id), AI Mode: \(queuedItem.isAIMode), Model: \(queuedItem.model)")
+        print("[QUEUE] Memory address of queue item: \(Unmanaged.passUnretained(queuedItem as AnyObject).toOpaque())")
+        print("[QUEUE] Transcription thread: \(Thread.current)")
         
         return .run { send in
           do {
@@ -287,12 +333,36 @@ struct TranscriptionFeature {
             )
             
             let transcriptionStart = Date()
-            let result = try await transcription.transcribe(queuedItem.audioURL, queuedItem.model, decodeOptions) { _ in }
+            // Create an immutable copy of the result to prevent corruption
+            let transcriptionResult = try await transcription.transcribe(queuedItem.audioURL, queuedItem.model, decodeOptions) { _ in }
+            // Make an explicit copy to isolate the string and validate it
+            let result = String(transcriptionResult)
+            
+            // Validate the result doesn't contain corruption patterns
+            let containsCorruption = result.contains { char in
+              // Check for common corruption patterns (high Unicode values, control chars)
+              let scalar = char.unicodeScalars.first?.value ?? 0
+              return scalar > 127 && !char.isLetter && !char.isNumber && !char.isPunctuation && !char.isWhitespace
+            }
+            
+            if containsCorruption {
+              print("[QUEUE] WARNING: Transcription result appears corrupted!")
+              print("[QUEUE] Corrupted result preview: '\(result.prefix(50))'")
+              print("[QUEUE] Unicode values: \(result.prefix(20).unicodeScalars.map { $0.value })")
+              // Return empty string instead of corrupted text
+              await send(.transcriptionQueueResult(id: queuedItem.id, result: ""))
+            } else {
+              await send(.transcriptionQueueResult(id: queuedItem.id, result: result))
+            }
             let transcriptionEnd = Date()
             let transcriptionTime = transcriptionEnd.timeIntervalSince(transcriptionStart)
             
             print("[QUEUE] Transcription completed in \(String(format: "%.2f", transcriptionTime))s: '\(result)'")
+            print("[QUEUE] Result length: \(result.count) characters")
+            print("[QUEUE] Result UTF-8 byte count: \(result.utf8.count)")
+            print("[QUEUE] Result contains non-ASCII: \(result.contains { !$0.isASCII })")
             print("[QUEUE] Sending transcription result at \(transcriptionEnd)")
+            print("[QUEUE] Memory address of result string: \(Unmanaged.passUnretained(result as AnyObject).toOpaque())")
             await send(.transcriptionQueueResult(id: queuedItem.id, result: result))
           } catch {
             print("[QUEUE] Error transcribing queued audio: \(error)")
@@ -302,6 +372,8 @@ struct TranscriptionFeature {
         .cancellable(id: CancelID.queueProcessing)
         
       case let .transcriptionQueueResult(id, result):
+        print("[ACTION] transcriptionQueueResult received - ID: \(id), result length: \(result.count)")
+        print("[ACTION] Current state - isTranscribing: \(state.isTranscribing), queue size: \(state.transcriptionQueue.count)")
         return handleQueueTranscriptionResult(&state, id: id, result: result)
         
       case let .transcriptionQueueError(id, error):
@@ -317,6 +389,12 @@ struct TranscriptionFeature {
         state.aiResponse = response
         state.isGeneratingAI = false
         
+        // If we're processing a queue, maintain transcribing state
+        // until the entire queue is done
+        if !state.isProcessingQueue {
+          state.isTranscribing = false
+        }
+        
         // AI responses are only displayed in modal, never automatically pasted
         // The user must manually copy/paste from the modal
         print("[AI] AI response received and displayed in modal: '\(response)'")
@@ -325,6 +403,12 @@ struct TranscriptionFeature {
       case let .aiGenerationError(error):
         state.isGeneratingAI = false
         state.error = error.localizedDescription
+        
+        // If we're processing a queue, maintain transcribing state
+        if !state.isProcessingQueue {
+          state.isTranscribing = false
+        }
+        
         return .run { _ in
           await soundEffect.play(.cancel)
         }
@@ -554,20 +638,46 @@ private extension TranscriptionFeature {
     let language = state.hexSettings.outputLanguage
     let isAIMode = state.isAIMode
     let startTime = state.recordingStartTime ?? Date()
+    // Track if we're adding to an already-active queue
+    let wasAddedToActiveQueue = state.isProcessingQueue || state.isTranscribing
     
     return .run { send in
       await soundEffect.play(.stopRecording)
       let audioURL = await recording.stopRecording()
       
-      let queuedTranscription = QueuedTranscription(
-        audioURL: audioURL,
-        startTime: startTime,
-        isAIMode: isAIMode,
-        model: model,
-        language: language
-      )
+      // Validate that we have a valid audio file
+      let fileExists = FileManager.default.fileExists(atPath: audioURL.path)
+      print("[RECORDING] Audio file exists: \(fileExists), URL: \(audioURL.lastPathComponent)")
       
-      await send(.queueTranscription(queuedTranscription))
+      if fileExists {
+        // Get file size to ensure it's not empty
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: audioURL.path),
+           let fileSize = attributes[.size] as? Int64 {
+          print("[RECORDING] Audio file size: \(fileSize) bytes")
+          
+          // Only queue if file has meaningful content (> 1KB)
+          if fileSize > 1024 {
+            let queuedTranscription = QueuedTranscription(
+              audioURL: audioURL,
+              startTime: startTime,
+              isAIMode: isAIMode,
+              model: model,
+              language: language,
+              wasAddedToActiveQueue: wasAddedToActiveQueue
+            )
+            
+            await send(.queueTranscription(queuedTranscription))
+          } else {
+            print("[RECORDING] Audio file too small (\(fileSize) bytes), discarding")
+            try? FileManager.default.removeItem(at: audioURL)
+          }
+        } else {
+          print("[RECORDING] Could not get audio file size, discarding")
+          try? FileManager.default.removeItem(at: audioURL)
+        }
+      } else {
+        print("[RECORDING] Audio file does not exist, skipping transcription")
+      }
     }
   }
 }
@@ -579,8 +689,12 @@ private extension TranscriptionFeature {
     _ state: inout State,
     result: String
   ) -> Effect<Action> {
-    state.isTranscribing = false
-    state.isPrewarming = false
+    // Only clear transcribing state if we're NOT processing a queue
+    // Queue processing will manage its own state
+    if !state.isProcessingQueue {
+      state.isTranscribing = false
+      state.isPrewarming = false
+    }
 
     // If empty text, nothing else to do
     guard !result.isEmpty else {
@@ -620,8 +734,11 @@ private extension TranscriptionFeature {
     _ state: inout State,
     error: Error
   ) -> Effect<Action> {
-    state.isTranscribing = false
-    state.isPrewarming = false
+    // Only clear transcribing state if we're NOT processing a queue
+    if !state.isProcessingQueue {
+      state.isTranscribing = false
+      state.isPrewarming = false
+    }
     state.error = error.localizedDescription
 
     return .run { _ in
@@ -703,7 +820,8 @@ private extension TranscriptionFeature {
     result: String,
     duration: TimeInterval,
     audioURL: URL,
-    transcriptionHistory: Shared<TranscriptionHistory>
+    transcriptionHistory: Shared<TranscriptionHistory>,
+    wasAddedToActiveQueue: Bool = false
   ) -> Effect<Action> {
     .run { send in
       let finalizeStart = Date()
@@ -711,6 +829,11 @@ private extension TranscriptionFeature {
       
       do {
         @Shared(.hexSettings) var hexSettings: HexSettings
+        
+        // If this was added to an already-active queue (not the first item),
+        // prepend a space for natural flow
+        let textToInsert = wasAddedToActiveQueue ? " \(result)" : result
+        print("[QUEUE] Text to insert: '\(textToInsert)' (prepended space: \(wasAddedToActiveQueue))")
 
         // Check if we should save to history
         if hexSettings.saveTranscriptionHistory {
@@ -763,7 +886,23 @@ private extension TranscriptionFeature {
         // Paste text (and copy if enabled via pasteWithClipboard)
         let pasteStart = Date()
         print("[TIMING] Starting paste operation at \(pasteStart)")
-        await pasteboard.paste(result)
+        print("[PASTE] About to paste text: '\(String(textToInsert.prefix(100)))\(textToInsert.count > 100 ? "..." : "")'")
+        print("[PASTE] Text memory address before paste: \(Unmanaged.passUnretained(textToInsert as AnyObject).toOpaque())")
+        print("[PASTE] Text integrity pre-paste - length: \(textToInsert.count), UTF-8 bytes: \(textToInsert.utf8.count)")
+        
+        // Create a copy to detect corruption
+        let resultCopy = String(textToInsert)
+        print("[PASTE] Created result copy - matches original: \(textToInsert == resultCopy)")
+        
+        await pasteboard.paste(textToInsert)
+        
+        // Check if original got corrupted during paste
+        let corruptionCheck = (textToInsert == resultCopy)
+        print("[PASTE] Post-paste corruption check - original still matches copy: \(corruptionCheck)")
+        if !corruptionCheck {
+          print("[PASTE] CORRUPTION DETECTED! Original: '\(String(textToInsert.prefix(50)))', Copy: '\(String(resultCopy.prefix(50)))'")
+        }
+        
         let pasteEnd = Date()
         let pasteTime = pasteEnd.timeIntervalSince(pasteStart)
         print("[TIMING] Paste completed in \(String(format: "%.2f", pasteTime))s at \(pasteEnd)")
@@ -773,7 +912,10 @@ private extension TranscriptionFeature {
         let finalizeEnd = Date()
         let totalFinalizeTime = finalizeEnd.timeIntervalSince(finalizeStart)
         print("[TIMING] finalizeQueuedTranscript total time: \(String(format: "%.2f", totalFinalizeTime))s")
+        print("[TIMING] finalization completed successfully for text of length \(textToInsert.count)")
       } catch {
+        print("[ERROR] finalizeQueuedTranscript failed: \(error)")
+        print("[ERROR] Result at time of error: '\(String(textToInsert.prefix(50)))'")
         await send(.transcriptionError(error))
       }
     }
@@ -790,6 +932,9 @@ private extension TranscriptionFeature {
     print("[QUEUE] handleQueueTranscriptionResult started at \(handleStart) for item ID: \(id)")
     print("[QUEUE] Current queue size: \(state.transcriptionQueue.count)")
     print("[QUEUE] Transcription result: '\(result)' (length: \(result.count))")
+    print("[QUEUE] Result memory address: \(Unmanaged.passUnretained(result as AnyObject).toOpaque())")
+    print("[QUEUE] Current thread: \(Thread.current)")
+    print("[QUEUE] State snapshot - isProcessingQueue: \(state.isProcessingQueue), isTranscribing: \(state.isTranscribing), isRecording: \(state.isRecording)")
     
     // Find the processed item to get its settings
     guard let processedItemIndex = state.transcriptionQueue.firstIndex(where: { $0.id == id }) else {
@@ -803,6 +948,7 @@ private extension TranscriptionFeature {
     // Remove the processed item from queue
     state.transcriptionQueue.remove(at: processedItemIndex)
     print("[QUEUE] Removed item from queue. New queue size: \(state.transcriptionQueue.count)")
+    print("[QUEUE] Remaining items in queue: \(state.transcriptionQueue.map { $0.id })")
     
     // Handle the result based on whether it was AI mode
     if processedItem.isAIMode && !result.isEmpty {
@@ -811,11 +957,16 @@ private extension TranscriptionFeature {
       let model = state.hexSettings.selectedOllamaModel
       let systemPrompt = state.hexSettings.ollamaSystemPrompt
       
+      // Create a defensive copy of the result to prevent corruption
+      let resultCopy = String(result)
+      
+      print("[QUEUE] Preparing to continue processing queue (AI mode)...")
       let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
       let aiGeneration = Effect.run { send in
         do {
           print("[QUEUE] Generating AI response with model: \(model)")
-          let response = try await ollama.generate(result, model, systemPrompt)
+          // Use the copy instead of the original
+          let response = try await ollama.generate(resultCopy, model, systemPrompt)
           print("[QUEUE] AI response received: '\(response)'")
           await send(Action.aiResponseReceived(response))
         } catch {
@@ -827,14 +978,29 @@ private extension TranscriptionFeature {
       return .merge(continueProcessing, aiGeneration)
     } else if !result.isEmpty {
       print("[QUEUE] Processing normal transcription mode - preparing to paste text")
+      print("[QUEUE] Result integrity check - length: \(result.count), first 50 chars: '\(String(result.prefix(50)))'")
+      print("[QUEUE] Result bytes: \(Array(result.utf8).prefix(20))")
       let duration = processedItem.startTime.timeIntervalSinceNow * -1
       
+      // Validate result before proceeding
+      let isValidText = !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      let hasUnusualCharacters = result.contains { char in
+        !char.isLetter && !char.isNumber && !char.isWhitespace && !char.isPunctuation
+      }
+      
+      print("[QUEUE] Text validation - isValid: \(isValidText), hasUnusualChars: \(hasUnusualCharacters)")
+      
+      // Create a defensive copy of the result to prevent corruption
+      let resultCopy = String(result)
+      
+      print("[QUEUE] Preparing to continue processing queue (normal mode)...")
       let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
       let finalizeEffect = finalizeQueuedTranscript(
-        result: result,
+        result: resultCopy,
         duration: duration,
         audioURL: processedItem.audioURL,
-        transcriptionHistory: state.$transcriptionHistory
+        transcriptionHistory: state.$transcriptionHistory,
+        wasAddedToActiveQueue: processedItem.wasAddedToActiveQueue
       )
       
       print("[QUEUE] Dispatching finalize effect and continue processing")
@@ -976,19 +1142,32 @@ struct TranscriptionView: View {
   }
   
   var transcribingStatus: TranscriptionIndicatorView.Status {
+    let status: TranscriptionIndicatorView.Status
+    
     if store.needsModel {
-      return .needsModel
+      status = .needsModel
     } else if store.isTranscribing || store.isGeneratingAI {
       // For queue processing, we need to determine AI mode from the first queued item
       let isAIMode = store.transcriptionQueue.first?.isAIMode ?? store.isAIMode
-      return isAIMode ? .aiTranscribing : .transcribing
+      status = isAIMode ? .aiTranscribing : .transcribing
     } else if store.isPrewarming {
-      return .prewarming
+      status = .prewarming
     } else if store.aiResponse != nil {
-      return .aiResponse
+      status = .aiResponse
     } else {
-      return .hidden
+      status = .hidden
     }
+    
+    // Log significant state transitions
+    if status != .hidden {
+      print("[INDICATOR] Transcribing status: \(status)")
+      print("[INDICATOR]   - isTranscribing: \(store.isTranscribing)")
+      print("[INDICATOR]   - isProcessingQueue: \(store.isProcessingQueue)")
+      print("[INDICATOR]   - isGeneratingAI: \(store.isGeneratingAI)")
+      print("[INDICATOR]   - queue size: \(store.transcriptionQueue.count)")
+    }
+    
+    return status
   }
   
   var shouldShowBoth: Bool {

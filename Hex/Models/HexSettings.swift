@@ -15,6 +15,7 @@ struct HexSettings: Codable, Equatable {
 	var pauseMediaOnRecord: Bool = true
 	var minimumKeyTime: Double = 0.2
 	var copyToClipboard: Bool = false
+	var useAccessibilityAPI: Bool = false
 	var useDoubleTapOnly: Bool = false
 	var outputLanguage: String? = nil
 	var selectedMicrophoneID: String? = nil
@@ -40,6 +41,7 @@ struct HexSettings: Codable, Equatable {
 		case pauseMediaOnRecord
 		case minimumKeyTime
 		case copyToClipboard
+		case useAccessibilityAPI
 		case useDoubleTapOnly
 		case outputLanguage
 		case selectedMicrophoneID
@@ -65,6 +67,7 @@ struct HexSettings: Codable, Equatable {
 		pauseMediaOnRecord: Bool = true,
 		minimumKeyTime: Double = 0.2,
 		copyToClipboard: Bool = false,
+		useAccessibilityAPI: Bool = false,
 		useDoubleTapOnly: Bool = false,
 		outputLanguage: String? = nil,
 		selectedMicrophoneID: String? = nil,
@@ -88,6 +91,7 @@ struct HexSettings: Codable, Equatable {
 		self.pauseMediaOnRecord = pauseMediaOnRecord
 		self.minimumKeyTime = minimumKeyTime
 		self.copyToClipboard = copyToClipboard
+		self.useAccessibilityAPI = useAccessibilityAPI
 		self.useDoubleTapOnly = useDoubleTapOnly
 		self.outputLanguage = outputLanguage
 		self.selectedMicrophoneID = selectedMicrophoneID
@@ -126,6 +130,8 @@ struct HexSettings: Codable, Equatable {
 			try container.decodeIfPresent(Double.self, forKey: .minimumKeyTime) ?? 0.2
 		copyToClipboard =
 			try container.decodeIfPresent(Bool.self, forKey: .copyToClipboard) ?? false
+		useAccessibilityAPI =
+			try container.decodeIfPresent(Bool.self, forKey: .useAccessibilityAPI) ?? false
 		useDoubleTapOnly =
 			try container.decodeIfPresent(Bool.self, forKey: .useDoubleTapOnly) ?? false
 		outputLanguage = try container.decodeIfPresent(String.self, forKey: .outputLanguage)

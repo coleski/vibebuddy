@@ -223,6 +223,41 @@ struct SettingsView: View {
 					Image(systemName: "doc.on.doc.fill")
 				}
 
+				// Only show accessibility API option when clipboard paste is disabled
+				if !store.hexSettings.useClipboardPaste {
+					Label {
+						Toggle("Use Accessibility API", isOn: $store.hexSettings.useAccessibilityAPI)
+						Text("Use macOS Accessibility API for direct text insertion. Faster than AppleScript typing but requires accessibility permission.")
+					} icon: {
+						Image(systemName: "accessibility")
+					}
+					
+					// Show warning when not using clipboard paste with Option key
+					// (Both simulated typing AND Accessibility API can fall back to AppleScript)
+					let hasOptionModifier = store.hexSettings.hotkey.modifiers.contains(.option)
+					if hasOptionModifier {
+						HStack {
+							Image(systemName: "exclamationmark.triangle.fill")
+								.foregroundColor(.orange)
+							VStack(alignment: .leading, spacing: 2) {
+								Text("Warning: Option (⌥) key may cause text corruption")
+									.font(.caption)
+									.fontWeight(.semibold)
+								Text("When not using clipboard paste, the Option key can interfere with text insertion if you start a new recording while previous text is still being typed. Consider using Command (⌘) or Control (⌃) instead.")
+									.font(.caption)
+									.foregroundColor(.secondary)
+								if store.hexSettings.useAccessibilityAPI {
+									Text("Note: Accessibility API may fall back to simulated typing if the focused element cannot be accessed.")
+										.font(.caption)
+										.foregroundColor(.secondary)
+										.italic()
+								}
+							}
+						}
+						.padding(.vertical, 4)
+					}
+				}
+
 				Label {
 					Toggle("Copy to clipboard", isOn: $store.hexSettings.copyToClipboard)
 					Text("Copy transcription text to clipboard in addition to pasting it")

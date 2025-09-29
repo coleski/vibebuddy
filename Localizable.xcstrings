@@ -732,6 +732,9 @@
     "Unlimited" : {
 
     },
+    "Use Accessibility API" : {
+
+    },
     "Use clipboard to insert" : {
       "comment" : "Label for toggle in general section.",
       "localizations" : {
@@ -753,6 +756,9 @@
           }
         }
       }
+    },
+    "Use macOS Accessibility API for direct text insertion. Faster than AppleScript typing but requires accessibility permission." : {
+
     },
     "Version" : {
       "comment" : "Label for version in About section.",
