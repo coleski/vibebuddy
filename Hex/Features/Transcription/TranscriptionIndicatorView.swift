@@ -360,10 +360,7 @@ struct TranscriptionIndicatorView: View {
         width: isRecordingOrAIRecording ? expandedWidth : baseWidth,
         height: baseWidth
       )
-    .opacity(shouldHideOrb ? 0 : 1)
-    .scaleEffect(shouldHideOrb ? 0.0 : 1)
-    .blur(radius: shouldHideOrb ? 4 : 0)
-    .animation(.bouncy(duration: 0.3), value: status)
+      .animation(.easeInOut(duration: 0.15), value: isRecordingOrAIRecording)
     .changeEffect(.glow(color: glowColor, radius: 10), value: status)
     .changeEffect(.shine(angle: .degrees(0), duration: 0.6), value: transcribeEffect)
     .compositingGroup()
@@ -456,26 +453,8 @@ struct TranscriptionIndicatorView: View {
           .transition(.opacity.combined(with: .scale))
       } else {
         orbView
-        
-        // Show tooltip when prewarming
-        if status == .prewarming {
-          VStack(spacing: 4) {
-            Text("Model prewarming...")
-              .font(.system(size: 12, weight: .medium))
-              .foregroundColor(.white)
-              .padding(.horizontal, 8)
-              .padding(.vertical, 4)
-              .background(
-                RoundedRectangle(cornerRadius: 4)
-                  .fill(Color.black.opacity(0.8))
-              )
-          }
-          .offset(y: -24)
-          .transition(.opacity)
-          .zIndex(2)
-        }
       }
-      
+
     }
     .overlay(alignment: .top) {
       // Show AI response modal as overlay (aligns top edge with indicator)

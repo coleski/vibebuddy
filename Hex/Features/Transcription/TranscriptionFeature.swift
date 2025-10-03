@@ -280,7 +280,7 @@ struct TranscriptionFeature {
         print("[QUEUE]   - isTranscribing: \(state.isTranscribing)")
         print("[QUEUE]   - isPrewarming: \(state.isPrewarming)")
         print("[QUEUE]   - isProcessingQueue: \(state.isProcessingQueue)")
-        
+
         guard !state.transcriptionQueue.isEmpty else {
           print("[QUEUE] Queue is empty - stopping processing")
           print("[QUEUE] Resetting all processing states")
@@ -291,23 +291,23 @@ struct TranscriptionFeature {
           state.isGeneratingAI = false
           return .none
         }
-        
+
         // Prevent concurrent processing
         guard !state.isProcessingQueue else {
           print("[QUEUE] Queue processing already in progress - ignoring duplicate call")
           return .none
         }
-        
+
         print("[QUEUE] Starting queue processing")
         state.isProcessingQueue = true
         state.isTranscribing = true
         state.isPrewarming = true
-        
+
         let queuedItem = state.transcriptionQueue[0]
         print("[QUEUE] Processing item ID: \(queuedItem.id), AI Mode: \(queuedItem.isAIMode), Model: \(queuedItem.model)")
         print("[QUEUE] Memory address of queue item: \(Unmanaged.passUnretained(queuedItem as AnyObject).toOpaque())")
         print("[QUEUE] Transcription thread: \(Thread.current)")
-        
+
         return .run { send in
           do {
             let startTime = Date()
@@ -345,6 +345,16 @@ struct TranscriptionFeature {
               return scalar > 127 && !char.isLetter && !char.isNumber && !char.isPunctuation && !char.isWhitespace
             }
             
+            let transcriptionEnd = Date()
+            let transcriptionTime = transcriptionEnd.timeIntervalSince(transcriptionStart)
+
+            print("[QUEUE] Transcription completed in \(String(format: "%.2f", transcriptionTime))s: '\(result)'")
+            print("[QUEUE] Result length: \(result.count) characters")
+            print("[QUEUE] Result UTF-8 byte count: \(result.utf8.count)")
+            print("[QUEUE] Result contains non-ASCII: \(result.contains { !$0.isASCII })")
+            print("[QUEUE] Sending transcription result at \(transcriptionEnd)")
+            print("[QUEUE] Memory address of result string: \(Unmanaged.passUnretained(result as AnyObject).toOpaque())")
+
             if containsCorruption {
               print("[QUEUE] WARNING: Transcription result appears corrupted!")
               print("[QUEUE] Corrupted result preview: '\(result.prefix(50))'")
@@ -354,16 +364,6 @@ struct TranscriptionFeature {
             } else {
               await send(.transcriptionQueueResult(id: queuedItem.id, result: result))
             }
-            let transcriptionEnd = Date()
-            let transcriptionTime = transcriptionEnd.timeIntervalSince(transcriptionStart)
-            
-            print("[QUEUE] Transcription completed in \(String(format: "%.2f", transcriptionTime))s: '\(result)'")
-            print("[QUEUE] Result length: \(result.count) characters")
-            print("[QUEUE] Result UTF-8 byte count: \(result.utf8.count)")
-            print("[QUEUE] Result contains non-ASCII: \(result.contains { !$0.isASCII })")
-            print("[QUEUE] Sending transcription result at \(transcriptionEnd)")
-            print("[QUEUE] Memory address of result string: \(Unmanaged.passUnretained(result as AnyObject).toOpaque())")
-            await send(.transcriptionQueueResult(id: queuedItem.id, result: result))
           } catch {
             print("[QUEUE] Error transcribing queued audio: \(error)")
             await send(.transcriptionQueueError(id: queuedItem.id, error: error))
@@ -826,14 +826,14 @@ private extension TranscriptionFeature {
     .run { send in
       let finalizeStart = Date()
       print("[TIMING] finalizeQueuedTranscript started at \(finalizeStart)")
-      
+
+      // If this was added to an already-active queue (not the first item),
+      // prepend a space for natural flow
+      let textToInsert = wasAddedToActiveQueue ? " \(result)" : result
+      print("[QUEUE] Text to insert: '\(textToInsert)' (prepended space: \(wasAddedToActiveQueue))")
+
       do {
         @Shared(.hexSettings) var hexSettings: HexSettings
-        
-        // If this was added to an already-active queue (not the first item),
-        // prepend a space for natural flow
-        let textToInsert = wasAddedToActiveQueue ? " \(result)" : result
-        print("[QUEUE] Text to insert: '\(textToInsert)' (prepended space: \(wasAddedToActiveQueue))")
 
         // Check if we should save to history
         if hexSettings.saveTranscriptionHistory {
@@ -949,7 +949,16 @@ private extension TranscriptionFeature {
     state.transcriptionQueue.remove(at: processedItemIndex)
     print("[QUEUE] Removed item from queue. New queue size: \(state.transcriptionQueue.count)")
     print("[QUEUE] Remaining items in queue: \(state.transcriptionQueue.map { $0.id })")
-    
+
+    // Check if queue is now empty and clear state immediately to avoid animation lag
+    let queueIsEmpty = state.transcriptionQueue.isEmpty
+    if queueIsEmpty {
+      state.isProcessingQueue = false
+      state.isTranscribing = false
+      state.isPrewarming = false
+      state.isGeneratingAI = false
+    }
+
     // Handle the result based on whether it was AI mode
     if processedItem.isAIMode && !result.isEmpty {
       print("[QUEUE] Processing AI mode result - starting AI generation")
@@ -961,7 +970,7 @@ private extension TranscriptionFeature {
       let resultCopy = String(result)
       
       print("[QUEUE] Preparing to continue processing queue (AI mode)...")
-      let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
+      let continueProcessing: Effect<Action> = queueIsEmpty ? .none : .send(.startProcessingQueue)
       let aiGeneration = Effect.run { send in
         do {
           print("[QUEUE] Generating AI response with model: \(model)")
@@ -974,7 +983,7 @@ private extension TranscriptionFeature {
           await send(Action.aiGenerationError(error))
         }
       }
-      
+
       return .merge(continueProcessing, aiGeneration)
     } else if !result.isEmpty {
       print("[QUEUE] Processing normal transcription mode - preparing to paste text")
@@ -989,12 +998,12 @@ private extension TranscriptionFeature {
       }
       
       print("[QUEUE] Text validation - isValid: \(isValidText), hasUnusualChars: \(hasUnusualCharacters)")
-      
+
       // Create a defensive copy of the result to prevent corruption
       let resultCopy = String(result)
-      
+
       print("[QUEUE] Preparing to continue processing queue (normal mode)...")
-      let continueProcessing: Effect<Action> = .send(.startProcessingQueue)
+      let continueProcessing: Effect<Action> = queueIsEmpty ? .none : .send(.startProcessingQueue)
       let finalizeEffect = finalizeQueuedTranscript(
         result: resultCopy,
         duration: duration,
@@ -1002,7 +1011,7 @@ private extension TranscriptionFeature {
         transcriptionHistory: state.$transcriptionHistory,
         wasAddedToActiveQueue: processedItem.wasAddedToActiveQueue
       )
-      
+
       print("[QUEUE] Dispatching finalize effect and continue processing")
       return .merge(continueProcessing, finalizeEffect)
     } else {
@@ -1015,7 +1024,8 @@ private extension TranscriptionFeature {
           print("[QUEUE] Failed to clean up audio file: \(error)")
         }
       }
-      return .merge(cleanupEffect, .send(.startProcessingQueue))
+      let continueProcessing: Effect<Action> = queueIsEmpty ? .none : .send(.startProcessingQueue)
+      return .merge(cleanupEffect, continueProcessing)
     }
   }
   
@@ -1047,9 +1057,9 @@ private extension TranscriptionFeature {
     
     // Show error and continue processing
     state.error = error.localizedDescription
-    
+
     print("[QUEUE] Continuing queue processing after error")
-    
+
     return .merge(
       cleanupEffect,
       .run { _ in
@@ -1184,8 +1194,9 @@ struct TranscriptionView: View {
           aiResponse: nil,
           onDismissAI: {}
         )
+        .transition(.opacity.combined(with: .scale(scale: 0.8)))
       }
-      
+
       // Transcribing orb (if transcribing/processing)
       if transcribingStatus != .hidden {
         TranscriptionIndicatorView(
@@ -1196,8 +1207,10 @@ struct TranscriptionView: View {
             store.send(.clearAIResponse)
           }
         )
+        .transition(.opacity.combined(with: .scale(scale: 0.8)))
       }
     }
+    .animation(.easeInOut(duration: 0.15), value: "\(recordingStatus)-\(transcribingStatus)")
     .task {
       await store.send(.task).finish()
     }
