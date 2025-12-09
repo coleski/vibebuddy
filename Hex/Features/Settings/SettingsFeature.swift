@@ -1,10 +1,14 @@
 import AVFoundation
+import AppKit
 import ComposableArchitecture
 import Dependencies
+import HexCore
 import IdentifiedCollections
 import Sauce
 import ServiceManagement
 import SwiftUI
+
+private let settingsLogger = HexLog.settings
 
 extension SharedReaderKey
   where Self == InMemoryKey<Bool>.Default
@@ -12,7 +16,11 @@ extension SharedReaderKey
   static var isSettingHotKey: Self {
     Self[.inMemory("isSettingHotKey"), default: false]
   }
-  
+
+  static var isSettingPasteLastTranscriptHotkey: Self {
+    Self[.inMemory("isSettingPasteLastTranscriptHotkey"), default: false]
+  }
+
   static var isSettingAIKey: Self {
     Self[.inMemory("isSettingAIKey"), default: false]
   }
@@ -26,23 +34,26 @@ struct SettingsFeature {
   struct State {
     @Shared(.hexSettings) var hexSettings: HexSettings
     @Shared(.isSettingHotKey) var isSettingHotKey: Bool = false
+    @Shared(.isSettingPasteLastTranscriptHotkey) var isSettingPasteLastTranscriptHotkey: Bool = false
     @Shared(.isSettingAIKey) var isSettingAIKey: Bool = false
     @Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
+    @Shared(.hotkeyPermissionState) var hotkeyPermissionState: HotkeyPermissionState
+    @Shared(.textTransformations) var textTransformations: TextTransformationsState
 
     var languages: IdentifiedArrayOf<Language> = []
     var currentModifiers: Modifiers = .init(modifiers: [])
-    var currentKey: Key? = nil
-
+    var currentPasteLastModifiers: Modifiers = .init(modifiers: [])
+    
     // Available microphones
     var availableInputDevices: [AudioInputDevice] = []
 
-    // Permissions
-    var microphonePermission: PermissionStatus = .notDetermined
-    var accessibilityPermission: PermissionStatus = .notDetermined
-
     // Model Management
     var modelDownload = ModelDownloadFeature.State()
-    var ollamaModel = OllamaModelFeature.State()
+    var shouldFlashModelSection = false
+
+    // Diagnostics
+    var isExportingLogs = false
+    var logExportStatus: LogExportStatus?
   }
 
   enum Action: BindableAction {
@@ -51,44 +62,51 @@ struct SettingsFeature {
     // Existing
     case task
     case startSettingHotKey
+    case startSettingPasteLastTranscriptHotkey
     case startSettingAIKey
+    case clearPasteLastTranscriptHotkey
     case keyEvent(KeyEvent)
     case toggleOpenOnLogin(Bool)
     case togglePreventSystemSleep(Bool)
-    case togglePauseMediaOnRecord(Bool)
-    case checkPermissions
-    case setMicrophonePermission(PermissionStatus)
-    case setAccessibilityPermission(PermissionStatus)
-    case requestMicrophonePermission
-    case requestAccessibilityPermission
-    case accessibilityStatusDidChange
-    
+    case setRecordingAudioBehavior(RecordingAudioBehavior)
+
+    // Permission delegation (forwarded to AppFeature)
+    case requestMicrophone
+    case requestAccessibility
+    case requestInputMonitoring
+
     // Microphone selection
     case loadAvailableInputDevices
     case availableInputDevicesLoaded([AudioInputDevice])
 
     // Model Management
     case modelDownload(ModelDownloadFeature.Action)
-    case ollamaModel(OllamaModelFeature.Action)
     
     // History Management
     case toggleSaveTranscriptionHistory(Bool)
+
+    // Modifier configuration
+    case setModifierSide(Modifier.Kind, Modifier.Side)
+
+    // Diagnostics
+    case exportLogsButtonTapped
+    case logExportFinished(URL)
+    case logExportFailed(String)
+    case logExportCancelled
   }
 
   @Dependency(\.keyEventMonitor) var keyEventMonitor
   @Dependency(\.continuousClock) var clock
   @Dependency(\.transcription) var transcription
   @Dependency(\.recording) var recording
+  @Dependency(\.permissions) var permissions
+  @Dependency(\.logExporter) var logExporter
 
   var body: some ReducerOf<Self> {
     BindingReducer()
 
     Scope(state: \.modelDownload, action: \.modelDownload) {
       ModelDownloadFeature()
-    }
-    
-    Scope(state: \.ollamaModel, action: \.ollamaModel) {
-      OllamaModelFeature()
     }
 
     Reduce { state, action in
@@ -107,46 +125,29 @@ struct SettingsFeature {
         {
           state.languages = IdentifiedArray(uniqueElements: languages)
         } else {
-          print("Failed to load languages")
+          settingsLogger.error("Failed to load languages JSON from bundle")
         }
 
         // Listen for key events and load microphones (existing + new)
         return .run { send in
-          await send(.checkPermissions)
           await send(.modelDownload(.fetchModels))
-          await send(.ollamaModel(.checkOllamaStatus))
           await send(.loadAvailableInputDevices)
-
-          // Listen for accessibility permission changes via distributed notification
-          let accessibilityObserver = DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name("com.apple.accessibility.api"),
-            object: nil,
-            queue: .main
-          ) { _ in
-            Task {
-              await send(.accessibilityStatusDidChange)
-            }
-          }
-
-          defer {
-            DistributedNotificationCenter.default().removeObserver(accessibilityObserver)
-          }
-
+          
           // Set up periodic refresh of available devices (every 120 seconds)
           // Using a longer interval to reduce resource usage
           let deviceRefreshTask = Task { @MainActor in
             for await _ in clock.timer(interval: .seconds(120)) {
               // Only refresh when the app is active to save resources
-              if await NSApplication.shared.isActive {
-                await send(.loadAvailableInputDevices)
+              if NSApplication.shared.isActive {
+                send(.loadAvailableInputDevices)
               }
             }
           }
-
+          
           // Listen for device connection/disconnection notifications
           // Using a simpler debounced approach with a single task
           var deviceUpdateTask: Task<Void, Never>?
-
+          
           // Helper function to debounce device updates
           func debounceDeviceUpdate() {
             deviceUpdateTask?.cancel()
@@ -157,7 +158,7 @@ struct SettingsFeature {
               }
             }
           }
-
+          
           let deviceConnectionObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name(rawValue: "AVCaptureDeviceWasConnected"),
             object: nil,
@@ -165,7 +166,7 @@ struct SettingsFeature {
           ) { _ in
             debounceDeviceUpdate()
           }
-
+          
           let deviceDisconnectionObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name(rawValue: "AVCaptureDeviceWasDisconnected"),
             object: nil,
@@ -173,7 +174,7 @@ struct SettingsFeature {
           ) { _ in
             debounceDeviceUpdate()
           }
-
+          
           // Be sure to clean up resources when the task is finished
           defer {
             deviceUpdateTask?.cancel()
@@ -181,37 +182,39 @@ struct SettingsFeature {
             NotificationCenter.default.removeObserver(deviceDisconnectionObserver)
           }
 
-          for try await keyEvent in await keyEventMonitor.listenForKeyPress() {
+          for try await rawKeyEvent in await keyEventMonitor.listenForKeyPress() {
+            let keyEvent = KeyEvent(key: rawKeyEvent.key, modifiers: rawKeyEvent.modifiers)
             await send(.keyEvent(keyEvent))
           }
-
+          
           deviceRefreshTask.cancel()
         }
 
       case .startSettingHotKey:
         state.$isSettingHotKey.withLock { $0 = true }
-        state.$isSettingAIKey.withLock { $0 = false }
-        state.currentModifiers = []
-        state.currentKey = nil
+        return .none
+
+      case .startSettingPasteLastTranscriptHotkey:
+        state.$isSettingPasteLastTranscriptHotkey.withLock { $0 = true }
+        state.currentPasteLastModifiers = .init(modifiers: [])
         return .none
 
       case .startSettingAIKey:
-        // Only allow setting AI key if AI assistant is enabled
-        if state.hexSettings.isAIAssistantEnabled {
-          state.$isSettingAIKey.withLock { $0 = true }
-          state.$isSettingHotKey.withLock { $0 = false }
-        }
+        state.$isSettingAIKey.withLock { $0 = true }
+        return .none
+
+      case .clearPasteLastTranscriptHotkey:
+        state.$hexSettings.withLock { $0.pasteLastTranscriptHotkey = nil }
         return .none
 
       case let .keyEvent(keyEvent):
-        // Handle setting AI modifier key
+        // Handle AI key setting (single key without modifiers)
         if state.isSettingAIKey {
           if keyEvent.key == .escape {
             state.$isSettingAIKey.withLock { $0 = false }
             return .none
           }
 
-          // For AI key, we only want a single key, not modifiers
           if let key = keyEvent.key {
             state.$hexSettings.withLock {
               $0.aiModifierKey = key
@@ -221,44 +224,54 @@ struct SettingsFeature {
           return .none
         }
 
-        // Handle setting main hotkey
+        // Handle paste last transcript hotkey setting
+        if state.isSettingPasteLastTranscriptHotkey {
+          if keyEvent.key == .escape {
+            state.$isSettingPasteLastTranscriptHotkey.withLock { $0 = false }
+            state.currentPasteLastModifiers = []
+            return .none
+          }
+
+          state.currentPasteLastModifiers = keyEvent.modifiers.union(state.currentPasteLastModifiers)
+          let currentModifiers = state.currentPasteLastModifiers
+          if let key = keyEvent.key {
+            guard !currentModifiers.isEmpty else {
+              return .none
+            }
+            state.$hexSettings.withLock {
+              $0.pasteLastTranscriptHotkey = HotKey(key: key, modifiers: currentModifiers.erasingSides())
+            }
+            state.$isSettingPasteLastTranscriptHotkey.withLock { $0 = false }
+            state.currentPasteLastModifiers = []
+          }
+          return .none
+        }
+
+        // Handle main recording hotkey setting
         guard state.isSettingHotKey else { return .none }
 
         if keyEvent.key == .escape {
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
-          state.currentKey = nil
           return .none
         }
 
-        // Update current modifiers and key to show live feedback
-        if !keyEvent.modifiers.isEmpty {
-          state.currentModifiers = keyEvent.modifiers
-        }
-
-        // Show the key being pressed (even before releasing)
-        if let key = keyEvent.key {
-          state.currentKey = key
-        }
-
-        // If a key is pressed (not just modifiers), save the hotkey
+        state.currentModifiers = keyEvent.modifiers.union(state.currentModifiers)
+        let currentModifiers = state.currentModifiers
         if let key = keyEvent.key {
           state.$hexSettings.withLock {
             $0.hotkey.key = key
-            $0.hotkey.modifiers = state.currentModifiers
+            $0.hotkey.modifiers = currentModifiers.erasingSides()
           }
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
-          state.currentKey = nil
-        } else if keyEvent.modifiers.isEmpty && !state.currentModifiers.isEmpty {
-          // User released all modifiers after pressing some - save modifier-only hotkey
+        } else if keyEvent.modifiers.isEmpty {
           state.$hexSettings.withLock {
             $0.hotkey.key = nil
-            $0.hotkey.modifiers = state.currentModifiers
+            $0.hotkey.modifiers = currentModifiers.erasingSides()
           }
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
-          state.currentKey = nil
         }
         return .none
 
@@ -276,82 +289,28 @@ struct SettingsFeature {
         state.$hexSettings.withLock { $0.preventSystemSleep = enabled }
         return .none
 
-      case let .togglePauseMediaOnRecord(enabled):
-        state.$hexSettings.withLock { $0.pauseMediaOnRecord = enabled }
+      case let .setRecordingAudioBehavior(behavior):
+        state.$hexSettings.withLock { $0.recordingAudioBehavior = behavior }
         return .none
 
-      // Permissions
-      case .checkPermissions:
-        // Check microphone
-        return .merge(
-          .run { send in
-            let currentStatus = await checkMicrophonePermission()
-            await send(.setMicrophonePermission(currentStatus))
-          },
-          .run { send in
-            let currentStatus = checkAccessibilityPermission()
-            await send(.setAccessibilityPermission(currentStatus))
-          }
-        )
-
-      case let .setMicrophonePermission(status):
-        state.microphonePermission = status
-        return .none
-
-      case let .setAccessibilityPermission(status):
-        state.accessibilityPermission = status
-        if status == .granted {
-          return .run { _ in
-            await keyEventMonitor.startMonitoring()
-          }
-        } else {
-          return .none
+      // Permission requests
+      case .requestMicrophone:
+        settingsLogger.info("User requested microphone permission from settings")
+        return .run { _ in
+          _ = await permissions.requestMicrophone()
         }
 
-      case .requestMicrophonePermission:
-        return .run { send in
-          let granted = await requestMicrophonePermissionImpl()
-          let status: PermissionStatus = granted ? .granted : .denied
-          await send(.setMicrophonePermission(status))
+      case .requestAccessibility:
+        settingsLogger.info("User requested accessibility permission from settings")
+        return .run { _ in
+          await permissions.requestAccessibility()
         }
 
-      case .requestAccessibilityPermission:
-        return .run { send in
-          // First, prompt the user with the system dialog
-          let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-          let alreadyTrusted = AXIsProcessTrustedWithOptions(options)
-
-          // If already trusted, just update the status
-          if alreadyTrusted {
-            await send(.setAccessibilityPermission(.granted))
-            return
-          }
-
-          // Open System Settings to the right pane
-          NSWorkspace.shared.open(
-            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-          )
-
-          // The distributed notification observer will handle updates
-          // Just check once more after a short delay to catch immediate changes
-          try? await Task.sleep(for: .seconds(1))
-          let newStatus = checkAccessibilityPermission()
-          await send(.setAccessibilityPermission(newStatus))
+      case .requestInputMonitoring:
+        settingsLogger.info("User requested input monitoring permission from settings")
+        return .run { _ in
+          _ = await permissions.requestInputMonitoring()
         }
-
-      case .accessibilityStatusDidChange:
-        let newStatus = checkAccessibilityPermission()
-        // Only update if the status actually changed
-        if state.accessibilityPermission != newStatus {
-          state.accessibilityPermission = newStatus
-          // If permission was granted, start monitoring
-          if newStatus == .granted {
-            return .run { _ in
-              await keyEventMonitor.startMonitoring()
-            }
-          }
-        }
-        return .none
 
       // Model Management
       case let .modelDownload(.selectModel(newModel)):
@@ -397,51 +356,55 @@ struct SettingsFeature {
         }
         
         return .none
-        
-      case .ollamaModel:
+
+      case let .setModifierSide(kind, side):
+        guard state.hexSettings.hotkey.key == nil else { return .none }
+        state.$hexSettings.withLock {
+          $0.hotkey.modifiers = $0.hotkey.modifiers.setting(kind: kind, to: side)
+        }
+        return .none
+
+      case .exportLogsButtonTapped:
+        guard !state.isExportingLogs else { return .none }
+        state.isExportingLogs = true
+        state.logExportStatus = nil
+        return .run { send in
+          do {
+            if let url = try await logExporter.exportLogs(30) {
+              await send(.logExportFinished(url))
+            } else {
+              await send(.logExportCancelled)
+            }
+          } catch {
+            await send(.logExportFailed(error.localizedDescription))
+          }
+        }
+
+      case let .logExportFinished(url):
+        state.isExportingLogs = false
+        state.logExportStatus = .success(url.path)
+        return .run { _ in
+          await MainActor.run {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+          }
+        }
+
+      case .logExportCancelled:
+        state.isExportingLogs = false
+        return .none
+
+      case let .logExportFailed(message):
+        state.isExportingLogs = false
+        state.logExportStatus = .failure(message)
         return .none
       }
     }
   }
 }
 
-// MARK: - Permissions Helpers
-
-/// Check current microphone permission
-private func checkMicrophonePermission() async -> PermissionStatus {
-  switch AVCaptureDevice.authorizationStatus(for: .audio) {
-  case .authorized:
-    return .granted
-  case .denied, .restricted:
-    return .denied
-  case .notDetermined:
-    return .notDetermined
-  @unknown default:
-    return .denied
+extension SettingsFeature.State {
+  enum LogExportStatus: Equatable {
+    case success(String)
+    case failure(String)
   }
-}
-
-/// Request microphone permission
-private func requestMicrophonePermissionImpl() async -> Bool {
-  await withCheckedContinuation { continuation in
-    AVCaptureDevice.requestAccess(for: .audio) { granted in
-      continuation.resume(returning: granted)
-    }
-  }
-}
-
-/// Check Accessibility permission on macOS
-/// This implementation checks the actual trust status without showing a prompt
-private func checkAccessibilityPermission() -> PermissionStatus {
-  let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
-  let trusted = AXIsProcessTrustedWithOptions(options)
-  return trusted ? .granted : .denied
-}
-
-// MARK: - Permission Status
-
-enum PermissionStatus: Equatable {
-  case notDetermined
-  case granted
-  case denied
 }

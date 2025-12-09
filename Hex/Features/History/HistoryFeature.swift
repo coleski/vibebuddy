@@ -1,39 +1,66 @@
 import AVFoundation
+import AppKit
 import ComposableArchitecture
 import Dependencies
-import SwiftUI
+import HexCore
 import Inject
+import SwiftUI
 
-// MARK: - Models
+private let historyLogger = HexLog.history
 
-struct Transcript: Codable, Equatable, Identifiable {
-	var id: UUID
-	var timestamp: Date
-	var text: String
-	var audioPath: URL
-	var duration: TimeInterval
-	
-	init(id: UUID = UUID(), timestamp: Date, text: String, audioPath: URL, duration: TimeInterval) {
-		self.id = id
-		self.timestamp = timestamp
-		self.text = text
-		self.audioPath = audioPath
-		self.duration = duration
+// MARK: - Date Extensions
+
+extension Date {
+	func relativeFormatted() -> String {
+		let calendar = Calendar.current
+		let now = Date()
+		
+		if calendar.isDateInToday(self) {
+			return "Today"
+		} else if calendar.isDateInYesterday(self) {
+			return "Yesterday"
+		} else if let daysAgo = calendar.dateComponents([.day], from: self, to: now).day, daysAgo < 7 {
+			let formatter = DateFormatter()
+			formatter.dateFormat = "EEEE" // Day of week
+			return formatter.string(from: self)
+		} else {
+			let formatter = DateFormatter()
+			formatter.dateStyle = .medium
+			formatter.timeStyle = .none
+			return formatter.string(from: self)
+		}
 	}
 }
 
-struct TranscriptionHistory: Codable, Equatable {
-	var history: [Transcript] = []
-}
+// MARK: - Models
 
 extension SharedReaderKey
 	where Self == FileStorageKey<TranscriptionHistory>.Default
 {
 	static var transcriptionHistory: Self {
 		Self[
-			.fileStorage(URL.documentsDirectory.appending(component: "transcription_history.json")),
+			.fileStorage(.transcriptionHistoryURL),
 			default: .init()
 		]
+	}
+}
+
+// MARK: - Storage Migration
+
+extension URL {
+	static var transcriptionHistoryURL: URL {
+		get {
+			let newURL = (try? URL.hexApplicationSupport.appending(component: "transcription_history.json")) ?? URL.documentsDirectory.appending(component: "transcription_history.json")
+			let legacyURL = URL.legacyDocumentsDirectory.appending(component: "transcription_history.json")
+			
+			// Migrate if needed
+			if FileManager.default.fileExists(atPath: legacyURL.path),
+			   !FileManager.default.fileExists(atPath: newURL.path) {
+				try? FileManager.default.copyItem(at: legacyURL, to: newURL)
+			}
+			
+			return newURL
+		}
 	}
 }
 
@@ -133,7 +160,7 @@ struct HistoryFeature {
 						}
 					}
 				} catch {
-					print("Error playing audio: \(error)")
+					historyLogger.error("Failed to play audio: \(error.localizedDescription)")
 					return .none
 				}
 
@@ -145,9 +172,8 @@ struct HistoryFeature {
 				return .none
 
 			case let .copyToClipboard(text):
-				return .run { _ in
-					NSPasteboard.general.clearContents()
-					NSPasteboard.general.setString(text, forType: .string)
+				return .run { [pasteboard] _ in
+					await pasteboard.copy(text)
 				}
 
 			case let .deleteTranscript(id):
@@ -221,8 +247,22 @@ struct TranscriptView: View {
 
 			HStack {
 				HStack(spacing: 6) {
+					// App icon and name
+					if let bundleID = transcript.sourceAppBundleID,
+					   let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+						Image(nsImage: NSWorkspace.shared.icon(forFile: appURL.path))
+							.resizable()
+							.frame(width: 14, height: 14)
+						if let appName = transcript.sourceAppName {
+							Text(appName)
+						}
+						Text("•")
+					}
+					
 					Image(systemName: "clock")
-					Text(transcript.timestamp.formatted(date: .numeric, time: .shortened))
+					Text(transcript.timestamp.relativeFormatted())
+					Text("•")
+					Text(transcript.timestamp.formatted(date: .omitted, time: .shortened))
 					Text("•")
 					Text(String(format: "%.1fs", transcript.duration))
 				}

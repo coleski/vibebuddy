@@ -3,19 +3,35 @@ import Carbon
 import Dependencies
 import DependenciesMacros
 import Foundation
+import HexCore
 import os
 import Sauce
 
 private let logger = Logger(subsystem: "com.kitlangton.Hex", category: "KeyEventMonitor")
 
-public struct KeyEvent {
+/// A token that can be used to cancel input event monitoring
+public final class InputEventCancellationToken {
+  let id: UUID
+  private let cancelHandler: (UUID) -> Void
+
+  init(id: UUID, cancelHandler: @escaping (UUID) -> Void) {
+    self.id = id
+    self.cancelHandler = cancelHandler
+  }
+
+  public func cancel() {
+    cancelHandler(id)
+  }
+}
+
+public struct RawKeyEvent {
   let key: Key?
   let modifiers: Modifiers
   let eventType: CGEventType
   let keyCode: Int
 }
 
-public extension KeyEvent {
+public extension RawKeyEvent {
   init(cgEvent: CGEvent, type: CGEventType) {
     let keyCode = Int(cgEvent.getIntegerValueField(.keyboardEventKeycode))
     let key = cgEvent.type == .keyDown ? Sauce.shared.key(for: keyCode) : nil
@@ -27,8 +43,9 @@ public extension KeyEvent {
 
 @DependencyClient
 struct KeyEventMonitorClient {
-  var listenForKeyPress: @Sendable () async -> AsyncThrowingStream<KeyEvent, Error> = { .never }
-  var handleKeyEvent: @Sendable (@escaping (KeyEvent) -> Bool) -> Void = { _ in }
+  var listenForKeyPress: @Sendable () async -> AsyncThrowingStream<RawKeyEvent, Error> = { .never }
+  var handleKeyEvent: @Sendable (@escaping (RawKeyEvent) -> Bool) -> InputEventCancellationToken = { _ in InputEventCancellationToken(id: UUID(), cancelHandler: { _ in }) }
+  var handleInputEvent: @Sendable (@escaping (InputEvent) -> Bool) -> InputEventCancellationToken = { _ in InputEventCancellationToken(id: UUID(), cancelHandler: { _ in }) }
   var startMonitoring: @Sendable () async -> Void = {}
 }
 
@@ -40,7 +57,10 @@ extension KeyEventMonitorClient: DependencyKey {
         live.listenForKeyPress()
       },
       handleKeyEvent: { handler in
-        live.handleKeyEvent(handler)
+        return live.handleKeyEvent(handler)
+      },
+      handleInputEvent: { handler in
+        return live.handleInputEvent(handler)
       },
       startMonitoring: {
         live.startMonitoring()
@@ -59,7 +79,8 @@ extension DependencyValues {
 class KeyEventMonitorClientLive {
   private var eventTapPort: CFMachPort?
   private var runLoopSource: CFRunLoopSource?
-  private var continuations: [UUID: (KeyEvent) -> Bool] = [:]
+  private var continuations: [UUID: (RawKeyEvent) -> Bool] = [:]
+  private var inputEventHandlers: [UUID: (InputEvent) -> Bool] = [:]
   private let continuationsLock = NSLock()
   private var isMonitoring = false
 
@@ -72,7 +93,7 @@ class KeyEventMonitorClientLive {
   }
 
   /// Provide a stream of key events.
-  func listenForKeyPress() -> AsyncThrowingStream<KeyEvent, Error> {
+  func listenForKeyPress() -> AsyncThrowingStream<RawKeyEvent, Error> {
     AsyncThrowingStream { continuation in
       let uuid = UUID()
       
@@ -122,9 +143,9 @@ class KeyEventMonitorClientLive {
 
     isMonitoring = true
 
-    // Create an event tap at the HID level to capture keyDown, keyUp, and flagsChanged
+    // Create an event tap at the HID level to capture keyDown, keyUp, flagsChanged, and mouse clicks
     let eventMask =
-      ((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue))
+      ((1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.rightMouseDown.rawValue))
 
     guard
       let eventTap = CGEvent.tapCreate(
@@ -141,7 +162,14 @@ class KeyEventMonitorClientLive {
             return Unmanaged.passUnretained(cgEvent)
           }
 
-          let keyEvent = KeyEvent(cgEvent: cgEvent, type: type)
+          // Handle mouse click events
+          if type == .leftMouseDown || type == .rightMouseDown {
+            let handled = hotKeyClientLive.processMouseClick()
+            // Never intercept mouse clicks - just notify handlers
+            return Unmanaged.passUnretained(cgEvent)
+          }
+
+          let keyEvent = RawKeyEvent(cgEvent: cgEvent, type: type)
           let handled = hotKeyClientLive.processKeyEvent(keyEvent)
 
           if handled {
@@ -170,10 +198,9 @@ class KeyEventMonitorClientLive {
     logger.info("Started monitoring key events via CGEvent tap.")
   }
 
-  // TODO: Handle removing the handler from the continuations on deinit/cancellation
-  func handleKeyEvent(_ handler: @escaping (KeyEvent) -> Bool) {
+  func handleKeyEvent(_ handler: @escaping (RawKeyEvent) -> Bool) -> InputEventCancellationToken {
     let uuid = UUID()
-    
+
     continuationsLock.lock()
     continuations[uuid] = handler
     let shouldStartMonitoring = continuations.count == 1
@@ -181,6 +208,21 @@ class KeyEventMonitorClientLive {
 
     if shouldStartMonitoring {
       startMonitoring()
+    }
+
+    return InputEventCancellationToken(id: uuid) { [weak self] id in
+      self?.removeKeyEventHandler(id: id)
+    }
+  }
+
+  private func removeKeyEventHandler(id: UUID) {
+    continuationsLock.lock()
+    continuations[id] = nil
+    let shouldStopMonitoring = continuations.isEmpty && inputEventHandlers.isEmpty
+    continuationsLock.unlock()
+
+    if shouldStopMonitoring {
+      stopMonitoring()
     }
   }
 
@@ -201,15 +243,68 @@ class KeyEventMonitorClientLive {
     logger.info("Stopped monitoring key events via CGEvent tap.")
   }
 
-  private func processKeyEvent(_ keyEvent: KeyEvent) -> Bool {
+  private func processKeyEvent(_ keyEvent: RawKeyEvent) -> Bool {
     var handled = false
 
     continuationsLock.lock()
     let handlers = Array(continuations.values)
+    let inputHandlers = Array(inputEventHandlers.values)
     continuationsLock.unlock()
-    
+
     for continuation in handlers {
       if continuation(keyEvent) {
+        handled = true
+      }
+    }
+
+    // Also dispatch to input event handlers (convert to HexCore KeyEvent)
+    let hexKeyEvent = KeyEvent(key: keyEvent.key, modifiers: keyEvent.modifiers)
+    for handler in inputHandlers {
+      if handler(.keyboard(hexKeyEvent)) {
+        handled = true
+      }
+    }
+
+    return handled
+  }
+
+  func handleInputEvent(_ handler: @escaping (InputEvent) -> Bool) -> InputEventCancellationToken {
+    let uuid = UUID()
+
+    continuationsLock.lock()
+    inputEventHandlers[uuid] = handler
+    let shouldStartMonitoring = continuations.isEmpty && inputEventHandlers.count == 1
+    continuationsLock.unlock()
+
+    if shouldStartMonitoring {
+      startMonitoring()
+    }
+
+    return InputEventCancellationToken(id: uuid) { [weak self] id in
+      self?.removeInputEventHandler(id: id)
+    }
+  }
+
+  private func removeInputEventHandler(id: UUID) {
+    continuationsLock.lock()
+    inputEventHandlers[id] = nil
+    let shouldStopMonitoring = continuations.isEmpty && inputEventHandlers.isEmpty
+    continuationsLock.unlock()
+
+    if shouldStopMonitoring {
+      stopMonitoring()
+    }
+  }
+
+  private func processMouseClick() -> Bool {
+    var handled = false
+
+    continuationsLock.lock()
+    let inputHandlers = Array(inputEventHandlers.values)
+    continuationsLock.unlock()
+
+    for handler in inputHandlers {
+      if handler(.mouseClick) {
         handled = true
       }
     }

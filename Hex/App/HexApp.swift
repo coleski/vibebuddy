@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Inject
 import Sparkle
+import AppKit
 import SwiftUI
 
 @main
@@ -38,6 +39,8 @@ struct HexApp: App {
 						}
 					}.keyboardShortcut(",")
 				}
+
+				CommandGroup(replacing: .help) {}
 			}
 	}
 }
@@ -46,10 +49,13 @@ struct HexApp: App {
 struct MenuContent: View {
 	var body: some View {
 		PortManagementView(store: HexApp.portStore)
-		
+
 		Divider()
-		
+
 		CheckForUpdatesView()
+
+		// Copy last transcript to clipboard
+		MenuBarCopyLastTranscriptButton()
 		
 		Button("Settings...") {
 			if let delegate = HexApp.sharedDelegate {

@@ -8,13 +8,18 @@
 import ComposableArchitecture
 import Dependencies
 import DependenciesMacros
+import Foundation
+import HexCore
 import Sauce
 import SwiftUI
+
+private let pasteboardLogger = HexLog.pasteboard
 
 @DependencyClient
 struct PasteboardClient {
     var paste: @Sendable (String) async -> Void
     var copy: @Sendable (String) async -> Void
+    var sendKeyboardCommand: @Sendable (KeyboardCommand) async -> Void
 }
 
 extension PasteboardClient: DependencyKey {
@@ -26,6 +31,9 @@ extension PasteboardClient: DependencyKey {
             },
             copy: { text in
                 await live.copy(text: text)
+            },
+            sendKeyboardCommand: { command in
+                await live.sendKeyboardCommand(command)
             }
         )
     }
@@ -194,6 +202,62 @@ actor PasteboardClientLive {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
     }
+    
+    @MainActor
+    func sendKeyboardCommand(_ command: KeyboardCommand) async {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        
+        // Convert modifiers to CGEventFlags and key codes for modifier keys
+        var modifierKeyCodes: [CGKeyCode] = []
+        var flags = CGEventFlags()
+        
+        for modifier in command.modifiers.sorted {
+            switch modifier.kind {
+            case .command:
+                flags.insert(.maskCommand)
+                modifierKeyCodes.append(55) // Left Cmd
+            case .shift:
+                flags.insert(.maskShift)
+                modifierKeyCodes.append(56) // Left Shift
+            case .option:
+                flags.insert(.maskAlternate)
+                modifierKeyCodes.append(58) // Left Option
+            case .control:
+                flags.insert(.maskControl)
+                modifierKeyCodes.append(59) // Left Control
+            case .fn:
+                flags.insert(.maskSecondaryFn)
+                // Fn key doesn't need explicit key down/up
+            }
+        }
+        
+        // Press modifiers down
+        for keyCode in modifierKeyCodes {
+            let modDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+            modDown?.post(tap: .cghidEventTap)
+        }
+        
+        // Press main key if present
+        if let key = command.key {
+            let keyCode = Sauce.shared.keyCode(for: key)
+            
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+            keyDown?.flags = flags
+            keyDown?.post(tap: .cghidEventTap)
+            
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+            keyUp?.flags = flags
+            keyUp?.post(tap: .cghidEventTap)
+        }
+        
+        // Release modifiers in reverse order
+        for keyCode in modifierKeyCodes.reversed() {
+            let modUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+            modUp?.post(tap: .cghidEventTap)
+        }
+        
+        pasteboardLogger.debug("Sent keyboard command: \(command.displayName)")
+    }
 
     // Function to save the current state of the NSPasteboard
     @MainActor
@@ -234,6 +298,10 @@ actor PasteboardClientLive {
         print("[PASTE_APPLESCRIPT] pasteToFrontmostApp() called")
         print("[PASTE_APPLESCRIPT] Current thread: \(Thread.current)")
         let script = """
+        if application "System Events" is not running then
+            tell application "System Events" to launch
+            delay 0.1
+        end if
         tell application "System Events"
             tell process (name of first application process whose frontmost is true)
                 tell (menu item "Paste" of menu of menu item "Paste" of menu "Edit" of menu bar item "Edit" of menu bar 1)
@@ -268,6 +336,7 @@ actor PasteboardClientLive {
             print("[PASTE_APPLESCRIPT] About to execute AppleScript for frontmost app paste")
             let result = scriptObject.executeAndReturnError(&error)
             if let error = error {
+pasteboardLogger.error("AppleScript paste failed: \(error)")
                 print("[PASTE_APPLESCRIPT] AppleScript error: \(error)")
                 print("[PASTE_APPLESCRIPT] Error description: \(error.description)")
                 return false
@@ -288,101 +357,116 @@ actor PasteboardClientLive {
         print("[CLIPBOARD] =================================")
         print("[CLIPBOARD] pasteWithClipboard started for text length: \(text.count)")
         print("[CLIPBOARD] Text preview: '\(String(text.prefix(50)))\(text.count > 50 ? "..." : "")'")
-        print("[CLIPBOARD] Text memory address: \(Unmanaged.passUnretained(text as AnyObject).toOpaque())")
         print("[CLIPBOARD] copyToClipboard setting: \(copyToClipboard)")
-        print("[CLIPBOARD] This method will: Copy text to clipboard, then simulate Cmd+V")
-        
-        // Integrity check before clipboard operations
-        let textCopy = String(text)
-        let preClipboardIntegrity = (text == textCopy)
-        print("[CLIPBOARD] Pre-clipboard integrity check: \(preClipboardIntegrity)")
-        
+
         let pasteboard = NSPasteboard.general
-        let originalItems = await savePasteboardState(pasteboard: pasteboard)
-        pasteboard.clearContents()
-        
-        // Check text again before setting to pasteboard
-        let preSetIntegrity = (text == textCopy)
-        print("[CLIPBOARD] Pre-pasteboard-set integrity check: \(preSetIntegrity)")
-        
-        let setSuccess = pasteboard.setString(text, forType: .string)
-        print("[CLIPBOARD] Set text to pasteboard - success: \(setSuccess)")
-        
-        // Verify what was actually set
-        let retrievedText = pasteboard.string(forType: .string) ?? ""
-        let clipboardMatches = (retrievedText == text)
-        print("[CLIPBOARD] Clipboard verification - matches original: \(clipboardMatches)")
-        print("[CLIPBOARD] Retrieved from clipboard: '\(String(retrievedText.prefix(50)))\(retrievedText.count > 50 ? "..." : "")'")
-        
-        if !clipboardMatches {
-            print("[CLIPBOARD] CLIPBOARD CORRUPTION DETECTED!")
-            print("[CLIPBOARD] Expected: '\(String(text.prefix(30)))', Got: '\(String(retrievedText.prefix(30)))'")
-        }
-
-        let source = CGEventSource(stateID: .combinedSessionState)
-        
-        // Track if paste operation successful
-        print("[PasteboardClient] Attempting to paste to frontmost app")
-        var pasteSucceeded = PasteboardClientLive.pasteToFrontmostApp()
-        print("[PasteboardClient] Paste to frontmost app result: \(pasteSucceeded)")
-        
-        // If menu-based paste failed, try simulated keypresses
-        if !pasteSucceeded {
-            print("[PasteboardClient] AppleScript paste failed, falling back to simulated Cmd+V keypresses")
-            let vKeyCode = Sauce.shared.keyCode(for: .v)
-            let cmdKeyCode: CGKeyCode = 55 // Command key
-            
-            print("[PasteboardClient] vKeyCode: \(vKeyCode), cmdKeyCode: \(cmdKeyCode)")
-
-            // Create cmd down event
-            let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: true)
-            print("[PasteboardClient] Created cmdDown event: \(cmdDown != nil)")
-
-            // Create v down event
-            let vDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true)
-            vDown?.flags = .maskCommand
-            print("[PasteboardClient] Created vDown event: \(vDown != nil)")
-
-            // Create v up event
-            let vUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
-            vUp?.flags = .maskCommand
-            print("[PasteboardClient] Created vUp event: \(vUp != nil)")
-
-            // Create cmd up event
-            let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: cmdKeyCode, keyDown: false)
-            print("[PasteboardClient] Created cmdUp event: \(cmdUp != nil)")
-
-            // Post the events
-            print("[PasteboardClient] Posting keyboard events...")
-            cmdDown?.post(tap: .cghidEventTap)
-            vDown?.post(tap: .cghidEventTap)
-            vUp?.post(tap: .cghidEventTap)
-            cmdUp?.post(tap: .cghidEventTap)
-            print("[PasteboardClient] Keyboard events posted")
-            
-            // Assume keypress-based paste succeeded - but text will remain in clipboard as fallback
-            pasteSucceeded = true
-            print("[PasteboardClient] Marked simulated keypress as succeeded")
-        }
+        let originalItems = savePasteboardState(pasteboard: pasteboard)
+        let targetChangeCount = writeAndTrackChangeCount(pasteboard: pasteboard, text: text)
+        _ = await waitForPasteboardCommit(targetChangeCount: targetChangeCount)
+        let pasteSucceeded = await tryPaste(text)
         
         // Only restore original pasteboard contents if:
         // 1. Copying to clipboard is disabled AND
         // 2. The paste operation succeeded
-        if !copyToClipboard && pasteSucceeded {
-            try? await Task.sleep(for: .seconds(0.1))
-            pasteboard.clearContents()
-            await restorePasteboardState(pasteboard: pasteboard, savedItems: originalItems)
+if !copyToClipboard && pasteSucceeded {
+            let savedItems = originalItems
+            Task { @MainActor in
+                // Give slower apps (e.g., Claude, Warp) a short window to read the plain-text entry
+                // before we repopulate the clipboard with the user's previous rich data.
+                try? await Task.sleep(for: .milliseconds(500))
+                pasteboard.clearContents()
+                restorePasteboardState(pasteboard: pasteboard, savedItems: savedItems)
+            }
         }
         
         // If we failed to paste AND user doesn't want clipboard retention,
         // show a notification that text is available in clipboard
         if !pasteSucceeded && !copyToClipboard {
             // Keep the transcribed text in clipboard regardless of setting
-            print("Paste operation failed. Text remains in clipboard as fallback.")
+            pasteboardLogger.notice("Paste operation failed; text remains in clipboard as fallback.")
             
             // TODO: Could add a notification here to inform user
             // that text is available in clipboard
         }
+    }
+
+    @MainActor
+    private func writeAndTrackChangeCount(pasteboard: NSPasteboard, text: String) -> Int {
+        let before = pasteboard.changeCount
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        let after = pasteboard.changeCount
+        if after == before {
+            // Ensure we always advance by at least one to avoid infinite waits if the system
+            // coalesces writes (seen on Sonoma betas with zero-length strings).
+            return after + 1
+        }
+        return after
+    }
+
+    @MainActor
+    private func waitForPasteboardCommit(
+        targetChangeCount: Int,
+        timeout: Duration = .milliseconds(150),
+        pollInterval: Duration = .milliseconds(5)
+    ) async -> Bool {
+        guard targetChangeCount > NSPasteboard.general.changeCount else { return true }
+
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if NSPasteboard.general.changeCount >= targetChangeCount {
+                return true
+            }
+            try? await Task.sleep(for: pollInterval)
+        }
+        return false
+    }
+
+    // MARK: - Paste Orchestration
+
+    @MainActor
+    private func tryPaste(_ text: String) async -> Bool {
+        // 1) Fast path: send Cmd+V (no delay)
+        if await postCmdV(delayMs: 0) { return true }
+        // 2) Menu fallback (quiet failure)
+        if PasteboardClientLive.pasteToFrontmostApp() { return true }
+        // 3) AX insert fallback
+        if (try? Self.insertTextAtCursor(text)) != nil { return true }
+        return false
+    }
+
+    // MARK: - Helpers
+
+    @MainActor
+    private func postCmdV(delayMs: Int) async -> Bool {
+        // Optional tiny wait before keystrokes
+        try? await wait(milliseconds: delayMs)
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let vKey = vKeyCode()
+        let cmdKey: CGKeyCode = 55
+        let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: cmdKey, keyDown: true)
+        let vDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true)
+        vDown?.flags = .maskCommand
+        let vUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
+        vUp?.flags = .maskCommand
+        let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: cmdKey, keyDown: false)
+        cmdDown?.post(tap: .cghidEventTap)
+        vDown?.post(tap: .cghidEventTap)
+        vUp?.post(tap: .cghidEventTap)
+        cmdUp?.post(tap: .cghidEventTap)
+        return true
+    }
+
+    @MainActor
+    private func vKeyCode() -> CGKeyCode {
+        if Thread.isMainThread { return Sauce.shared.keyCode(for: .v) }
+        return DispatchQueue.main.sync { Sauce.shared.keyCode(for: .v) }
+    }
+
+    @MainActor
+    private func wait(milliseconds: Int) async throws {
+        try Task.checkCancellation()
+        try await Task.sleep(nanoseconds: UInt64(milliseconds) * 1_000_000)
     }
     
     @MainActor  
@@ -437,6 +521,7 @@ actor PasteboardClientLive {
         let typingTime = typingEnd.timeIntervalSince(typingStart)
         
         if let error = error {
+            pasteboardLogger.error("Error executing AppleScript typing fallback: \(error)")
             print("[APPLESCRIPT] Typing failed in \(String(format: "%.2f", typingTime))s: \(error)")
             print("[APPLESCRIPT] Error details: \(error.description)")
         } else {
@@ -444,7 +529,7 @@ actor PasteboardClientLive {
             print("[APPLESCRIPT] Result: \(result?.description ?? "nil")")
         }
     }
-    
+
     @MainActor
     func insertTextWithAccessibilityAPI(_ text: String) {
         let insertStart = Date()
@@ -454,30 +539,11 @@ actor PasteboardClientLive {
         print("[ACCESSIBILITY] Insertion started at \(insertStart) for text length: \(text.count)")
         print("[ACCESSIBILITY] This method will: Use Accessibility API to directly insert text at cursor")
         print("[ACCESSIBILITY] Text preview: '\(String(text.prefix(50)))\(text.count > 50 ? "..." : "")'")
-        print("[ACCESSIBILITY] Text memory address: \(Unmanaged.passUnretained(text as AnyObject).toOpaque())")
-        
-        // Integrity check before accessibility operations
-        let textCopy = String(text)
-        let preAccessibilityIntegrity = (text == textCopy)
-        print("[ACCESSIBILITY] Pre-accessibility integrity check: \(preAccessibilityIntegrity)")
-        
-        if !preAccessibilityIntegrity {
-            print("[ACCESSIBILITY] TEXT CORRUPTION detected before accessibility API!")
-            print("[ACCESSIBILITY] Original: '\(String(text.prefix(30)))', Copy: '\(String(textCopy.prefix(30)))'")
-        }
-        
+
         do {
             print("[ACCESSIBILITY] About to call insertTextAtCursor")
             try PasteboardClientLive.insertTextAtCursor(text)
-            
-            // Post-insertion integrity check
-            let postAccessibilityIntegrity = (text == textCopy)
-            print("[ACCESSIBILITY] Post-accessibility integrity check: \(postAccessibilityIntegrity)")
-            if !postAccessibilityIntegrity {
-                print("[ACCESSIBILITY] TEXT CORRUPTION detected after accessibility API!")
-                print("[ACCESSIBILITY] Original now: '\(String(text.prefix(30)))', Expected: '\(String(textCopy.prefix(30)))'")
-            }
-            
+
             let insertEnd = Date()
             let insertTime = insertEnd.timeIntervalSince(insertStart)
             print("[ACCESSIBILITY] Insertion completed successfully in \(String(format: "%.2f", insertTime))s")
@@ -486,7 +552,7 @@ actor PasteboardClientLive {
             let insertTime = insertEnd.timeIntervalSince(insertStart)
             print("[ACCESSIBILITY] Insertion failed in \(String(format: "%.2f", insertTime))s: \(error)")
             print("[ACCESSIBILITY] Error type: \(type(of: error))")
-            
+
             // Fallback to AppleScript if accessibility API fails
             print("[ACCESSIBILITY] Falling back to AppleScript due to failure")
             simulateTypingWithAppleScript(text)

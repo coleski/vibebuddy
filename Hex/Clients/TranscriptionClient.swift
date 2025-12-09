@@ -6,10 +6,16 @@
 //
 
 import AVFoundation
+import Darwin
 import Dependencies
 import DependenciesMacros
 import Foundation
+import HexCore
 import WhisperKit
+
+private let transcriptionLogger = HexLog.transcription
+private let modelsLogger = HexLog.models
+private let parakeetLogger = HexLog.parakeet
 
 /// A client that downloads and loads WhisperKit models, then transcribes audio files using the loaded model.
 /// Exposes progress callbacks to report overall download-and-load percentage and transcription progress.
@@ -67,6 +73,7 @@ actor TranscriptionClientLive {
 
   /// The name of the currently loaded model, if any.
   private var currentModelName: String?
+  private var parakeet: ParakeetClient = ParakeetClient()
 
   /// The base folder under which we store model data (e.g., ~/Library/Application Support/...).
   private lazy var modelsBaseFolder: URL = {
@@ -93,22 +100,30 @@ actor TranscriptionClientLive {
   /// Ensures the given `variant` model is downloaded and loaded, reporting
   /// overall progress (0%–50% for downloading, 50%–100% for loading).
   func downloadAndLoadModel(variant: String, progressCallback: @escaping (Progress) -> Void) async throws {
+    // If Parakeet, use Parakeet client path
+    if isParakeet(variant) {
+      try await parakeet.ensureLoaded(modelName: variant, progress: progressCallback)
+      currentModelName = variant
+      return
+    }
+    // Resolve wildcard patterns (e.g., "distil*large-v3") to a concrete variant
+    let variant = await resolveVariant(variant)
     // Special handling for corrupted or malformed variant names
     if variant.isEmpty {
       throw NSError(
         domain: "TranscriptionClient",
         code: -3,
         userInfo: [
-          NSLocalizedDescriptionKey: "Cannot download model: Empty model name"
+          NSLocalizedDescriptionKey: "Cannot download model: Empty model name",
         ]
       )
     }
-    
+
     let overallProgress = Progress(totalUnitCount: 100)
     overallProgress.completedUnitCount = 0
     progressCallback(overallProgress)
-    
-    print("[TranscriptionClientLive] Processing model: \(variant)")
+
+    modelsLogger.info("Preparing model download and load for \(variant)")
 
     // 1) Model download phase (0-50% progress)
     if !(await isModelDownloaded(variant)) {
@@ -129,7 +144,7 @@ actor TranscriptionClientLive {
       overallProgress.completedUnitCount = Int64(fraction * 100)
       progressCallback(overallProgress)
     }
-    
+
     // Final progress update
     overallProgress.completedUnitCount = 100
     progressCallback(overallProgress)
@@ -137,51 +152,61 @@ actor TranscriptionClientLive {
 
   /// Deletes a model from disk if it exists
   func deleteModel(variant: String) async throws {
+    if isParakeet(variant) {
+      try await parakeet.deleteCaches(modelName: variant)
+      if currentModelName == variant { unloadCurrentModel() }
+      return
+    }
     let modelFolder = modelPath(for: variant)
-    
+
     // Check if the model exists
     guard FileManager.default.fileExists(atPath: modelFolder.path) else {
       // Model doesn't exist, nothing to delete
       return
     }
-    
+
     // If this is the currently loaded model, unload it first
     if currentModelName == variant {
       unloadCurrentModel()
     }
-    
+
     // Delete the model directory
     try FileManager.default.removeItem(at: modelFolder)
-    
-    print("[TranscriptionClientLive] Deleted model: \(variant)")
+
+    modelsLogger.info("Deleted model \(variant)")
   }
 
   /// Returns `true` if the model is already downloaded to the local folder.
   /// Performs a thorough check to ensure the model files are actually present and usable.
   func isModelDownloaded(_ modelName: String) async -> Bool {
+    if isParakeet(modelName) {
+      let available = await parakeet.isModelAvailable(modelName)
+      parakeetLogger.debug("Parakeet available? \(available)")
+      return available
+    }
     let modelFolderPath = modelPath(for: modelName).path
     let fileManager = FileManager.default
-    
+
     // First, check if the basic model directory exists
     guard fileManager.fileExists(atPath: modelFolderPath) else {
       // Don't print logs that would spam the console
       return false
     }
-    
+
     do {
       // Check if the directory has actual model files in it
       let contents = try fileManager.contentsOfDirectory(atPath: modelFolderPath)
-      
+
       // Model should have multiple files and certain key components
       guard !contents.isEmpty else {
         return false
       }
-      
+
       // Check for specific model structure - need both tokenizer and model files
       let hasModelFiles = contents.contains { $0.hasSuffix(".mlmodelc") || $0.contains("model") }
       let tokenizerFolderPath = tokenizerPath(for: modelName).path
       let hasTokenizer = fileManager.fileExists(atPath: tokenizerFolderPath)
-      
+
       // Both conditions must be true for a model to be considered downloaded
       return hasModelFiles && hasTokenizer
     } catch {
@@ -196,7 +221,13 @@ actor TranscriptionClientLive {
 
   /// Lists all model variants available in the `argmaxinc/whisperkit-coreml` repository.
   func getAvailableModels() async throws -> [String] {
-    try await WhisperKit.fetchAvailableModels()
+    var names = try await WhisperKit.fetchAvailableModels()
+    #if canImport(FluidAudio)
+    for model in ParakeetModel.allCases.reversed() {
+      if !names.contains(model.identifier) { names.insert(model.identifier, at: 0) }
+    }
+    #endif
+    return names
   }
 
   /// Transcribes the audio file at `url` using a `model` name.
@@ -208,13 +239,33 @@ actor TranscriptionClientLive {
     options: DecodingOptions,
     progressCallback: @escaping (Progress) -> Void
   ) async throws -> String {
+    let startAll = Date()
+    if isParakeet(model) {
+      transcriptionLogger.notice("Transcribing with Parakeet model=\(model) file=\(url.lastPathComponent)")
+      let startLoad = Date()
+      try await downloadAndLoadModel(variant: model) { p in
+        progressCallback(p)
+      }
+      transcriptionLogger.info("Parakeet ensureLoaded took \(String(format: "%.2f", Date().timeIntervalSince(startLoad)))s")
+      let preparedClip = try ParakeetClipPreparer.ensureMinimumDuration(url: url, logger: parakeetLogger)
+      defer { preparedClip.cleanup() }
+      let startTx = Date()
+      let text = try await parakeet.transcribe(preparedClip.url)
+      transcriptionLogger.info("Parakeet transcription took \(String(format: "%.2f", Date().timeIntervalSince(startTx)))s")
+      transcriptionLogger.info("Parakeet request total elapsed \(String(format: "%.2f", Date().timeIntervalSince(startAll)))s")
+      return text
+    }
+    let model = await resolveVariant(model)
     // Load or switch to the required model if needed.
     if whisperKit == nil || model != currentModelName {
       unloadCurrentModel()
+      let startLoad = Date()
       try await downloadAndLoadModel(variant: model) { p in
         // Debug logging, or scale as desired:
         progressCallback(p)
       }
+      let loadDuration = Date().timeIntervalSince(startLoad)
+      transcriptionLogger.info("WhisperKit ensureLoaded model=\(model) took \(String(format: "%.2f", loadDuration))s")
     }
 
     guard let whisperKit = whisperKit else {
@@ -228,7 +279,11 @@ actor TranscriptionClientLive {
     }
 
     // Perform the transcription.
+    transcriptionLogger.notice("Transcribing with WhisperKit model=\(model) file=\(url.lastPathComponent)")
+    let startTx = Date()
     let results = try await whisperKit.transcribe(audioPath: url.path, decodeOptions: options)
+    transcriptionLogger.info("WhisperKit transcription took \(String(format: "%.2f", Date().timeIntervalSince(startTx)))s")
+    transcriptionLogger.info("WhisperKit request total elapsed \(String(format: "%.2f", Date().timeIntervalSince(startAll)))s")
 
     // Concatenate results from all segments.
     let text = results.map(\.text).joined(separator: " ")
@@ -237,11 +292,33 @@ actor TranscriptionClientLive {
 
   // MARK: - Private Helpers
 
+  /// Resolve wildcard patterns (e.g. "distil*large-v3") to a concrete model name.
+  /// Preference: downloaded > non-turbo > any match.
+  private func resolveVariant(_ variant: String) async -> String {
+    if !(variant.contains("*") || variant.contains("?")) { return variant }
+    let names: [String]
+    do { names = try await WhisperKit.fetchAvailableModels() } catch { return variant }
+    let matches = names.filter { fnmatch(variant, $0, 0) == 0 }
+    guard !matches.isEmpty else { return variant }
+    var downloaded: [String] = []
+    for name in matches { if await isModelDownloaded(name) { downloaded.append(name) } }
+    if !downloaded.isEmpty {
+      if let nonTurbo = downloaded.first(where: { !$0.localizedCaseInsensitiveContains("turbo") }) { return nonTurbo }
+      return downloaded[0]
+    }
+    if let nonTurbo = matches.first(where: { !$0.localizedCaseInsensitiveContains("turbo") }) { return nonTurbo }
+    return matches[0]
+  }
+
+  private func isParakeet(_ name: String) -> Bool {
+    ParakeetModel(rawValue: name) != nil
+  }
+
   /// Creates or returns the local folder (on disk) for a given `variant` model.
   private func modelPath(for variant: String) -> URL {
     // Remove any possible path traversal or invalid characters from variant name
     let sanitizedVariant = variant.components(separatedBy: CharacterSet(charactersIn: "./\\")).joined(separator: "_")
-    
+
     return modelsBaseFolder
       .appendingPathComponent("argmaxinc")
       .appendingPathComponent("whisperkit-coreml")
@@ -266,52 +343,55 @@ actor TranscriptionClientLive {
     progressCallback: @escaping (Progress) -> Void
   ) async throws {
     let modelFolder = modelPath(for: variant)
-    
+
     // If the model folder exists but isn't a complete model, clean it up
     let isDownloaded = await isModelDownloaded(variant)
-    if FileManager.default.fileExists(atPath: modelFolder.path) && !isDownloaded {
+    if FileManager.default.fileExists(atPath: modelFolder.path), !isDownloaded {
       try FileManager.default.removeItem(at: modelFolder)
     }
-    
+
     // If model is already fully downloaded, we're done
     if isDownloaded {
       return
     }
 
-    print("[TranscriptionClientLive] Downloading model: \(variant)")
+    modelsLogger.info("Downloading model \(variant)")
 
     // Create parent directories
     let parentDir = modelFolder.deletingLastPathComponent()
     try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
-    
+
     do {
       // Download directly using the exact variant name provided
+      // WhisperKit 0.15.0 changed downloader params: passing
+      // "argmaxinc/whisperkit-coreml" to a parameter interpreted as a host
+      // yields NSURLErrorCannotFindHost in production builds that need
+      // to fetch models for the first time. Let WhisperKit use its
+      // default repo/host (Hugging Face) by omitting the repo/host arg.
       let tempFolder = try await WhisperKit.download(
         variant: variant,
         downloadBase: nil,
         useBackgroundSession: false,
-        from: "argmaxinc/whisperkit-coreml",
-        token: nil,
         progressCallback: { progress in
           progressCallback(progress)
         }
       )
-      
+
       // Ensure target folder exists
       try FileManager.default.createDirectory(at: modelFolder, withIntermediateDirectories: true)
-      
+
       // Move the downloaded snapshot to the final location
       try moveContents(of: tempFolder, to: modelFolder)
-      
-      print("[TranscriptionClientLive] Downloaded model to: \(modelFolder.path)")
+
+      modelsLogger.info("Downloaded model to \(modelFolder.path)")
     } catch {
       // Clean up any partial download if an error occurred
       if FileManager.default.fileExists(atPath: modelFolder.path) {
         try? FileManager.default.removeItem(at: modelFolder)
       }
-      
+
       // Rethrow the original error
-      print("[TranscriptionClientLive] Error downloading model: \(error.localizedDescription)")
+      modelsLogger.error("Error downloading model \(variant): \(error.localizedDescription)")
       throw error
     }
   }
@@ -335,7 +415,7 @@ actor TranscriptionClientLive {
       tokenizerFolder: tokenizerFolder,
       // verbose: true,
       // logLevel: .debug,
-      prewarm: true,
+      prewarm: false,
       load: true
     )
 
@@ -347,7 +427,7 @@ actor TranscriptionClientLive {
     loadingProgress.completedUnitCount = 100
     progressCallback(loadingProgress)
 
-    print("[TranscriptionClientLive] Loaded WhisperKit model: \(modelName)")
+    modelsLogger.info("Loaded WhisperKit model \(modelName)")
   }
 
   /// Moves all items from `sourceFolder` into `destFolder` (shallow move of directory contents).

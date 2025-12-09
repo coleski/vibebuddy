@@ -38,6 +38,7 @@ struct TranscriptionIndicatorView: View {
     case aiRecording
     case transcribing
     case aiTranscribing
+    case postProcessing
     case prewarming
     case needsModel
     case aiResponse
@@ -60,6 +61,7 @@ struct TranscriptionIndicatorView: View {
     case .aiRecording: return aiBaseColor
     case .transcribing: return Color.white  // Solid white
     case .aiTranscribing: return Color.white
+    case .postProcessing: return Color.white
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
@@ -74,6 +76,7 @@ struct TranscriptionIndicatorView: View {
     case .aiRecording: return aiBaseColor
     case .transcribing: return Color.clear  // No border
     case .aiTranscribing: return Color.clear  // No border
+    case .postProcessing: return Color.clear  // No border
     case .prewarming: return transcribeBaseColor
     case .needsModel: return Color.black.opacity(0.5)
     case .aiResponse: return Color.black.opacity(0.5)
@@ -88,6 +91,7 @@ struct TranscriptionIndicatorView: View {
     case .aiRecording: return aiBaseColor.opacity(0.2)
     case .transcribing: return transcribeBaseColor.opacity(0.2)
     case .aiTranscribing: return aiBaseColor.opacity(0.2)
+    case .postProcessing: return aiBaseColor.opacity(0.2)
     case .prewarming: return transcribeBaseColor.opacity(0.2)
     case .needsModel: return Color.gray.opacity(0.1)
     case .aiResponse: return Color.gray.opacity(0.2)

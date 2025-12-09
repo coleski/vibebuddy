@@ -37,8 +37,8 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 			object: nil
 		)
 
-		// Trigger auto-download of initial model if needed
-		HexApp.appStore.send(.onAppear)
+		// Trigger initialization (auto-download of initial model if needed, etc.)
+		HexApp.appStore.send(.task)
 
 		// Then present main views
 		presentMainView()

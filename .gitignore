@@ -10,5 +10,12 @@ updates/
 buildServer.json
 bin
 scripts
+tools
 ExportOptions.plist
 Makefile
+HexCore/.build
+HexCore/.swiftpm/xcode/xcuserdata/kit.xcuserdatad/xcschemes
+FluidAudio/
+node_modules/
+.npm-cache/
+.tmp/

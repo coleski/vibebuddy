@@ -483,26 +483,6 @@ public struct OllamaModelFeature {
 
 // ──────────────────────────────────────────────────────────────────────────
 
-private struct StarRatingView: View {
-	let filled: Int
-	let max: Int
-	
-	init(_ filled: Int, max: Int = 5) {
-		self.filled = filled
-		self.max = max
-	}
-	
-	var body: some View {
-		HStack(spacing: 3) {
-			ForEach(0 ..< max, id: \.self) { i in
-				Image(systemName: i < filled ? "circle.fill" : "circle")
-					.font(.system(size: 7))
-					.foregroundColor(i < filled ? .blue : .gray.opacity(0.5))
-			}
-		}
-	}
-}
-
 public struct OllamaModelView: View {
 	@Bindable var store: StoreOf<OllamaModelFeature>
 	
@@ -524,7 +504,7 @@ public struct OllamaModelView: View {
 					if store.showAllModels {
 						AllModelsList(store: store)
 					} else {
-						CuratedList(store: store)
+						OllamaCuratedList(store: store)
 					}
 				}
 				
@@ -616,9 +596,9 @@ private struct AllModelsList: View {
 	}
 }
 
-private struct CuratedList: View {
+private struct OllamaCuratedList: View {
 	@Bindable var store: StoreOf<OllamaModelFeature>
-	
+
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
 			// Header
@@ -643,33 +623,31 @@ private struct CuratedList: View {
 					.font(.caption.bold())
 			}
 			.padding(.horizontal, 8)
-			
+
 			ForEach(store.curatedModels) { model in
-				CuratedRow(store: store, model: model)
+				OllamaCuratedRow(store: store, model: model)
 			}
 		}
 	}
 }
 
-private struct CuratedRow: View {
+private struct OllamaCuratedRow: View {
 	@Bindable var store: StoreOf<OllamaModelFeature>
 	let model: OllamaModelInfo
-	
+
 	var isSelected: Bool {
 		model.name == store.hexSettings.selectedOllamaModel
 	}
-	
+
 	var compatibility: OllamaModelFeature.ModelCompatibility {
 		store.state.canRunModel(model)
 	}
-	
+
 	var statusIcon: some View {
 		Group {
 			if model.isDownloaded {
-				// Don't show any status for downloaded models
 				EmptyView()
 			} else {
-				// Show compatibility status for undownloaded models
 				switch compatibility {
 				case .recommended:
 					if model.isRecommended {
@@ -693,10 +671,10 @@ private struct CuratedRow: View {
 			}
 		}
 	}
-	
+
 	var body: some View {
 		Button(
-			action: { 
+			action: {
 				if model.isDownloaded {
 					store.send(.selectModel(model.name))
 				} else if compatibility != .incompatible {
@@ -719,23 +697,23 @@ private struct CuratedRow: View {
 					}
 				}
 				.frame(minWidth: 100, alignment: .leading)
-				
+
 				Spacer()
-				StarRatingView(model.speedStars)
+				OllamaStarRatingView(model.speedStars)
 					.frame(minWidth: 60, alignment: .leading)
 					.opacity(model.isDownloaded ? 1.0 : 0.5)
-				
+
 				Spacer()
-				StarRatingView(model.capabilityStars)
+				OllamaStarRatingView(model.capabilityStars)
 					.frame(minWidth: 60, alignment: .leading)
 					.opacity(model.isDownloaded ? 1.0 : 0.5)
-				
+
 				Spacer()
 				Text(model.storageSize)
 					.foregroundColor(.secondary)
 					.frame(minWidth: 60, alignment: .leading)
 					.opacity(model.isDownloaded ? 1.0 : 0.6)
-				
+
 				statusIcon
 					.frame(minWidth: 80, alignment: .leading)
 			}
@@ -756,6 +734,26 @@ private struct CuratedRow: View {
 		}
 		.buttonStyle(.plain)
 		.disabled(!model.isDownloaded && compatibility == .incompatible)
+	}
+}
+
+private struct OllamaStarRatingView: View {
+	let filled: Int
+	let max: Int
+
+	init(_ filled: Int, max: Int = 5) {
+		self.filled = filled
+		self.max = max
+	}
+
+	var body: some View {
+		HStack(spacing: 3) {
+			ForEach(0 ..< max, id: \.self) { i in
+				Image(systemName: i < filled ? "circle.fill" : "circle")
+					.font(.system(size: 7))
+					.foregroundColor(i < filled ? .blue : .gray.opacity(0.5))
+			}
+		}
 	}
 }
 

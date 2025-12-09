@@ -4,8 +4,24 @@
     "" : {
       "shouldTranslate" : false
     },
-    "(Not downloaded)" : {
+    "   +%lld more..." : {
 
+    },
+    "(%@)" : {
+
+    },
+    "(disabled)" : {
+
+    },
+    "%@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
     },
     "%@: %@" : {
       "localizations" : {
@@ -17,11 +33,27 @@
         }
       }
     },
+    "%lld transformation%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld transformation%2$@"
+          }
+        }
+      }
+    },
+    "%lld." : {
+
+    },
     "%lldGB RAM required" : {
 
     },
     "•" : {
       "shouldTranslate" : false
+    },
+    "+%lld more" : {
+
     },
     "50" : {
 
@@ -51,6 +83,7 @@
     },
     "Accessibility" : {
       "comment" : "Settings -> Accessibility Section headline",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -63,16 +96,22 @@
     "Accuracy" : {
 
     },
-    "AI Assistant" : {
+    "Advanced" : {
 
     },
-    "AI Models" : {
+    "AI Assistant" : {
 
     },
     "AI Modifier (press with hotkey to trigger AI)" : {
 
     },
     "AI Processing" : {
+
+    },
+    "Applies to first matching app (no filters)" : {
+
+    },
+    "Applies to:" : {
 
     },
     "Apply AI formatting to all transcriptions before pasting" : {
@@ -89,6 +128,15 @@
         }
       }
     },
+    "Assign a shortcut (modifier + key) to instantly paste your last transcription." : {
+
+    },
+    "Audio Behavior while Recording" : {
+
+    },
+    "Auto-send:" : {
+
+    },
     "Become a Sponsor" : {
 
     },
@@ -102,6 +150,9 @@
           }
         }
       }
+    },
+    "Cancel Download" : {
+
     },
     "Capability" : {
 
@@ -148,6 +199,9 @@
         }
       }
     },
+    "Clear shortcut" : {
+
+    },
     "Close" : {
       "localizations" : {
         "de" : {
@@ -161,6 +215,9 @@
     "Compatible" : {
 
     },
+    "Configure modes by editing the JSON file" : {
+
+    },
     "Copied" : {
       "comment" : "Transcription from history copied.",
       "localizations" : {
@@ -171,6 +228,12 @@
           }
         }
       }
+    },
+    "Copy LLM Instructions" : {
+
+    },
+    "Copy Path" : {
+
     },
     "Copy to clipboard" : {
       "comment" : "copy transcription from history.",
@@ -184,6 +247,9 @@
       }
     },
     "Copy transcription text to clipboard in addition to pasting it" : {
+
+    },
+    "Create modes by editing the configuration file" : {
 
     },
     "Delete" : {
@@ -237,10 +303,7 @@
     "Dismissal Speed %lld WPM" : {
 
     },
-    "Double-tap the hotkey to start/stop recording. Holding won't work." : {
-
-    },
-    "Double-tap to start/stop recording (hold disabled)" : {
+    "Do Nothing" : {
 
     },
     "Download" : {
@@ -269,6 +332,9 @@
         }
       }
     },
+    "Downloaded" : {
+
+    },
     "Downloading %@..." : {
       "comment" : "In Transcription Model section in settings.",
       "localizations" : {
@@ -280,20 +346,15 @@
         }
       }
     },
-    "Downloading model..." : {
-
-    },
-    "Enable AI Assistant" : {
+    "Downloading… %lld%%" : {
 
     },
     "Enable in Settings" : {
 
     },
-    "Enable to use AI assistant features. When disabled, the dictation hotkey will work normally without AI interference." : {
-
-    },
     "Ensure Hex can access your microphone and system accessibility features." : {
       "comment" : "Footer for permissions section in settings",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -320,6 +381,12 @@
     "Examples: 'Add proper punctuation and capitalization', 'Format as bullet points', 'Convert to title case'" : {
 
     },
+    "Export Logs" : {
+
+    },
+    "Exporting Logs…" : {
+
+    },
     "Formatting Instructions" : {
 
     },
@@ -334,8 +401,12 @@
         }
       }
     },
+    "Grant" : {
+
+    },
     "Granted" : {
       "comment" : "Label title for granted permissions.",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -373,12 +444,6 @@
     "Hold the AI modifier key while recording to send transcription to Ollama for processing. The response will auto-dismiss based on reading speed." : {
 
     },
-    "Hold the hotkey to record, or double-tap to toggle recording on/off." : {
-
-    },
-    "Hold to record or double-tap to toggle recording" : {
-
-    },
     "Hot Key" : {
       "comment" : "hotkey section in settings.",
       "localizations" : {
@@ -403,7 +468,19 @@
     "Input Device" : {
 
     },
+    "Input Monitoring is required so Hex can listen for your hotkey." : {
+
+    },
     "Launch Ollama" : {
+
+    },
+    "LLM Editing Guide" : {
+
+    },
+    "LLM Providers" : {
+
+    },
+    "LLM Providers:" : {
 
     },
     "Maximum History Entries" : {
@@ -412,8 +489,12 @@
     "May be slow" : {
 
     },
+    "MCP Tools:" : {
+
+    },
     "Microphone" : {
       "comment" : "Microphone permission.",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -429,19 +510,14 @@
     "Model" : {
 
     },
-    "Model prewarming..." : {
+    "Modifier side" : {
+
+    },
+    "Mute Volume" : {
 
     },
     "Needs model" : {
-      "comment" : "Indicator shown when user tries to transcribe without a downloaded model",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Modell benötigt"
-          }
-        }
-      }
+
     },
     "No models found." : {
       "comment" : "Replacement text in transcription model section when no available models are found",
@@ -455,7 +531,13 @@
         }
       }
     },
+    "No Modes" : {
+
+    },
     "No ports in use" : {
+
+    },
+    "No providers configured. Open the configuration file to add Claude or Ollama entries." : {
 
     },
     "No Transcriptions" : {
@@ -469,10 +551,22 @@
         }
       }
     },
+    "Not set" : {
+
+    },
     "Oldest entries will be automatically deleted when limit is reached" : {
 
     },
     "Ollama Service" : {
+
+    },
+    "Open Configuration File" : {
+
+    },
+    "Open in Editor" : {
+
+    },
+    "Open Input Monitoring Settings" : {
 
     },
     "Open on Login" : {
@@ -500,8 +594,15 @@
     "Override the system default microphone with a specific input device. This setting will persist across sessions." : {
 
     },
+    "Paste Last Transcript" : {
+
+    },
+    "Pause Media" : {
+
+    },
     "Pause Media while Recording" : {
       "comment" : "Label for general setting whether to pause media while recording.",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -561,6 +662,7 @@
     },
     "Request Permission" : {
       "comment" : "Button texts for requesting permissions in settings.",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -569,9 +671,6 @@
           }
         }
       }
-    },
-    "Require double-tap (disable hold)" : {
-
     },
     "Reset to Default" : {
 
@@ -585,11 +684,18 @@
     "Save transcriptions and audio recordings for later access" : {
 
     },
+    "Saved to %@" : {
+
+    },
+    "Saves the last 30 minutes of Hex diagnostics so you can share them with support." : {
+
+    },
     "Selected device not connected. System default will be used." : {
 
     },
     "Selected Model" : {
       "comment" : "Label for selecting which model is active",
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -639,7 +745,6 @@
     },
     "Show Dock Icon" : {
       "comment" : "label for general setting whether to show the dock icon or not.",
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -649,7 +754,16 @@
         }
       }
     },
+    "Show in Finder" : {
+
+    },
+    "Show less" : {
+
+    },
     "Show Models Folder" : {
+
+    },
+    "Show more" : {
 
     },
     "Show Recommended" : {
@@ -712,7 +826,19 @@
     "System Prompt" : {
 
     },
+    "Text Transformation Modes" : {
+
+    },
+    "Text Transformations" : {
+
+    },
+    "Text-only" : {
+
+    },
     "The AI will format your transcriptions according to these instructions before pasting." : {
+
+    },
+    "Tools" : {
 
     },
     "Transcription history is currently disabled." : {
@@ -729,10 +855,13 @@
         }
       }
     },
+    "Transformations" : {
+
+    },
     "Unlimited" : {
 
     },
-    "Use Accessibility API" : {
+    "Use at least one modifier (⌘, ⌥, ⇧, ⌃) plus a key." : {
 
     },
     "Use clipboard to insert" : {
@@ -757,7 +886,7 @@
         }
       }
     },
-    "Use macOS Accessibility API for direct text insertion. Faster than AppleScript typing but requires accessibility permission." : {
+    "Use double-tap only" : {
 
     },
     "Version" : {
@@ -781,6 +910,12 @@
           }
         }
       }
+    },
+    "Voice Prefixes:" : {
+
+    },
+    "Volume" : {
+
     },
     "When disabled, transcriptions will not be saved and audio files will be deleted immediately after transcription." : {
 

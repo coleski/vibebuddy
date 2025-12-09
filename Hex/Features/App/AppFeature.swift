@@ -5,26 +5,36 @@
 //  Created by Kit Langton on 1/26/25.
 //
 
+import AppKit
 import ComposableArchitecture
 import Dependencies
+import HexCore
 import SwiftUI
 
 @Reducer
 struct AppFeature {
   enum ActiveTab: Equatable {
     case settings
+    case transformations
     case history
     case about
   }
 
-  @ObservableState
-  struct State {
-    var transcription: TranscriptionFeature.State = .init()
-    var settings: SettingsFeature.State = .init()
-    var history: HistoryFeature.State = .init()
-    var activeTab: ActiveTab = .settings
-    var hasCheckedForModel = false
-    var isDownloadingInitialModel = false
+	@ObservableState
+	struct State {
+		var transcription: TranscriptionFeature.State = .init()
+		var settings: SettingsFeature.State = .init()
+		var history: HistoryFeature.State = .init()
+		var textTransformations: TextTransformationFeature.State = .init()
+		var activeTab: ActiveTab = .settings
+		var allowsLLMFeatures: Bool = DeveloperAccess.allowsLLMFeatures
+		@Shared(.hexSettings) var hexSettings: HexSettings
+		@Shared(.modelBootstrapState) var modelBootstrapState: ModelBootstrapState
+
+    // Permission state
+    var microphonePermission: PermissionStatus = .notDetermined
+    var accessibilityPermission: PermissionStatus = .notDetermined
+    var inputMonitoringPermission: PermissionStatus = .notDetermined
   }
 
   enum Action: BindableAction {
@@ -32,14 +42,27 @@ struct AppFeature {
     case transcription(TranscriptionFeature.Action)
     case settings(SettingsFeature.Action)
     case history(HistoryFeature.Action)
+    case textTransformations(TextTransformationFeature.Action)
     case setActiveTab(ActiveTab)
-    case onAppear
-    case checkAndDownloadInitialModel
-    case initialModelDownloadComplete
+    case task
+    case pasteLastTranscript
+
+    // Permission actions
+    case checkPermissions
+    case permissionsUpdated(mic: PermissionStatus, acc: PermissionStatus, input: PermissionStatus)
+    case appActivated
+    case requestMicrophone
+    case requestAccessibility
+    case requestInputMonitoring
+    case modelStatusEvaluated(Bool)
   }
 
+  @Dependency(\.keyEventMonitor) var keyEventMonitor
+  @Dependency(\.pasteboard) var pasteboard
   @Dependency(\.transcription) var transcription
-  
+  @Dependency(\.permissions) var permissions
+  @Dependency(\.hexToolServer) var hexToolServer
+
   var body: some ReducerOf<Self> {
     BindingReducer()
 
@@ -55,82 +78,201 @@ struct AppFeature {
       HistoryFeature()
     }
 
+    Scope(state: \.textTransformations, action: \.textTransformations) {
+      TextTransformationFeature()
+    }
+
     Reduce { state, action in
       switch action {
       case .binding:
         return .none
+        
+      case .task:
+        return .merge(
+          startPasteLastTranscriptMonitoring(),
+          ensureSelectedModelReadiness(),
+          startPermissionMonitoring(),
+          prewarmToolServer()
+        )
+        
+      case .pasteLastTranscript:
+        @Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
+        guard let lastTranscript = transcriptionHistory.history.first?.text else {
+          return .none
+        }
+        return .run { _ in
+          await pasteboard.paste(lastTranscript)
+        }
+        
+      case .transcription(.modelMissing):
+        HexLog.app.notice("Model missing - activating app and switching to settings")
+        state.activeTab = .settings
+        state.settings.shouldFlashModelSection = true
+        return .run { send in
+          await MainActor.run {
+            HexLog.app.notice("Activating app for model missing")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+          }
+          try? await Task.sleep(for: .seconds(2))
+          await send(.settings(.set(\.shouldFlashModelSection, false)))
+        }
+
       case .transcription:
         return .none
+
       case .settings:
         return .none
+
+      case .textTransformations:
+        return .none
+
       case .history(.navigateToSettings):
         state.activeTab = .settings
         return .none
       case .history:
         return .none
-      case let .setActiveTab(tab):
-        state.activeTab = tab
-        return .none
-        
-      case .onAppear:
-        guard !state.hasCheckedForModel else { return .none }
-        state.hasCheckedForModel = true
-        return .send(.checkAndDownloadInitialModel)
-        
-      case .checkAndDownloadInitialModel:
-        @Shared(.hexSettings) var hexSettings: HexSettings
-        let currentSelectedModel = hexSettings.selectedModel
-        
+		case let .setActiveTab(tab):
+			if tab == .transformations, !state.allowsLLMFeatures {
+				return .none
+			}
+			state.activeTab = tab
+			return .none
+
+      // Permission handling
+      case .checkPermissions:
         return .run { send in
-          // First check if the currently selected model is already downloaded
-          let hasSelectedModel = await transcription.isModelDownloaded(currentSelectedModel)
-          
-          if hasSelectedModel {
-            print("[AppFeature] Selected model already downloaded, no action needed")
-            return
-          }
-          
-          // Check if ANY model is downloaded
-          let availableModels = try? await transcription.getAvailableModels()
-          var hasAnyModel = false
-          if let models = availableModels {
-            for model in models {
-              if await transcription.isModelDownloaded(model) {
-                hasAnyModel = true
-                break
-              }
-            }
-          }
-          
-          if !hasAnyModel {
-            // No models downloaded, download the recommended one
-            do {
-              // Get the system-recommended model
-              let recommendedModel = try await transcription.getRecommendedModels().default
-              print("[AppFeature] No models found, downloading recommended model for first-time setup: \(recommendedModel)")
-              
-              // Update settings to use recommended model
-              await MainActor.run {
-                $hexSettings.withLock { $0.selectedModel = recommendedModel }
-              }
-              
-              // Download the recommended model
-              try await transcription.downloadModel(recommendedModel) { progress in
-                // We could show progress if desired, but keeping it silent for now
-                print("[AppFeature] Initial model download progress: \(progress.fractionCompleted)")
-              }
-              await send(.initialModelDownloadComplete)
-            } catch {
-              print("[AppFeature] Failed to download initial model: \(error)")
-            }
+          async let mic = permissions.microphoneStatus()
+          async let acc = permissions.accessibilityStatus()
+          async let input = permissions.inputMonitoringStatus()
+          await send(.permissionsUpdated(mic: mic, acc: acc, input: input))
+        }
+
+      case let .permissionsUpdated(mic, acc, input):
+        state.microphonePermission = mic
+        state.accessibilityPermission = acc
+        state.inputMonitoringPermission = input
+        return .none
+
+      case .appActivated:
+        // App became active - re-check permissions
+        return .send(.checkPermissions)
+
+      case .requestMicrophone:
+        return .run { send in
+          _ = await permissions.requestMicrophone()
+          await send(.checkPermissions)
+        }
+
+      case .requestAccessibility:
+        return .run { send in
+          await permissions.requestAccessibility()
+          // Poll for status change (macOS doesn't provide callback)
+          for _ in 0..<10 {
+            try? await Task.sleep(for: .seconds(1))
+            await send(.checkPermissions)
           }
         }
-        
-      case .initialModelDownloadComplete:
-        state.isDownloadingInitialModel = false
-        print("[AppFeature] Initial model download complete")
+
+      case .requestInputMonitoring:
+        return .run { send in
+          _ = await permissions.requestInputMonitoring()
+          for _ in 0..<10 {
+            try? await Task.sleep(for: .seconds(1))
+            await send(.checkPermissions)
+          }
+        }
+
+      case .modelStatusEvaluated:
         return .none
       }
+    }
+  }
+  
+  private func startPasteLastTranscriptMonitoring() -> Effect<Action> {
+    .run { send in
+      @Shared(.isSettingPasteLastTranscriptHotkey) var isSettingPasteLastTranscriptHotkey: Bool
+      @Shared(.hexSettings) var hexSettings: HexSettings
+
+      let token = keyEventMonitor.handleKeyEvent { keyEvent in
+        // Skip if user is setting a hotkey
+        if isSettingPasteLastTranscriptHotkey {
+          return false
+        }
+
+        // Check if this matches the paste last transcript hotkey
+        guard let pasteHotkey = hexSettings.pasteLastTranscriptHotkey,
+              let key = keyEvent.key,
+              key == pasteHotkey.key,
+              keyEvent.modifiers.matchesExactly(pasteHotkey.modifiers) else {
+          return false
+        }
+
+        // Trigger paste action - use MainActor to avoid escaping send
+        MainActor.assumeIsolated {
+          send(.pasteLastTranscript)
+        }
+        return true // Intercept the key event
+      }
+
+      defer { token.cancel() }
+
+      await withTaskCancellationHandler {
+        do {
+          try await Task.sleep(nanoseconds: .max)
+        } catch {
+          // Expected on cancellation
+        }
+      } onCancel: {
+        token.cancel()
+      }
+    }
+  }
+
+  private func ensureSelectedModelReadiness() -> Effect<Action> {
+    .run { send in
+      @Shared(.hexSettings) var hexSettings: HexSettings
+      @Shared(.modelBootstrapState) var modelBootstrapState: ModelBootstrapState
+      let selectedModel = hexSettings.selectedModel
+      guard !selectedModel.isEmpty else {
+        await send(.modelStatusEvaluated(false))
+        return
+      }
+      let isReady = await transcription.isModelDownloaded(selectedModel)
+      $modelBootstrapState.withLock { state in
+        state.modelIdentifier = selectedModel
+        if state.modelDisplayName?.isEmpty ?? true {
+          state.modelDisplayName = selectedModel
+        }
+        state.isModelReady = isReady
+        if isReady {
+          state.lastError = nil
+          state.progress = 1
+        } else {
+          state.progress = 0
+        }
+      }
+      await send(.modelStatusEvaluated(isReady))
+    }
+  }
+
+  private func startPermissionMonitoring() -> Effect<Action> {
+    .run { send in
+      // Initial check on app launch
+      await send(.checkPermissions)
+
+      // Monitor app activation events
+      for await activation in permissions.observeAppActivation() {
+        if case .didBecomeActive = activation {
+          await send(.appActivated)
+        }
+      }
+
+    }
+  }
+
+  private func prewarmToolServer() -> Effect<Action> {
+    .run { _ in
+      _ = try? await hexToolServer.ensureServer(nil)
     }
   }
 }
@@ -146,28 +288,61 @@ struct AppView: View {
           store.send(.setActiveTab(.settings))
         } label: {
           Label("Settings", systemImage: "gearshape")
-        }.buttonStyle(.plain)
-          .tag(AppFeature.ActiveTab.settings)
+        }
+        .buttonStyle(.plain)
+        .tag(AppFeature.ActiveTab.settings)
+
+        if store.allowsLLMFeatures {
+          Button {
+            store.send(.setActiveTab(.transformations))
+          } label: {
+            Label("Transformations", systemImage: "wand.and.stars")
+          }
+          .buttonStyle(.plain)
+          .tag(AppFeature.ActiveTab.transformations)
+        }
 
         Button {
           store.send(.setActiveTab(.history))
         } label: {
           Label("History", systemImage: "clock")
-        }.buttonStyle(.plain)
-          .tag(AppFeature.ActiveTab.history)
-          
+        }
+        .buttonStyle(.plain)
+        .tag(AppFeature.ActiveTab.history)
+
         Button {
           store.send(.setActiveTab(.about))
         } label: {
           Label("About", systemImage: "info.circle")
-        }.buttonStyle(.plain)
-          .tag(AppFeature.ActiveTab.about)
+        }
+        .buttonStyle(.plain)
+        .tag(AppFeature.ActiveTab.about)
       }
     } detail: {
       switch store.state.activeTab {
       case .settings:
-        SettingsView(store: store.scope(state: \.settings, action: \.settings))
+        SettingsView(
+          store: store.scope(state: \.settings, action: \.settings),
+          microphonePermission: store.microphonePermission,
+          accessibilityPermission: store.accessibilityPermission,
+          inputMonitoringPermission: store.inputMonitoringPermission,
+          allowsLLMFeatures: store.allowsLLMFeatures
+        )
+        .navigationTitle("Settings")
+      case .transformations:
+        if store.allowsLLMFeatures {
+          TextTransformationView(store: store.scope(state: \.textTransformations, action: \.textTransformations))
+            .navigationTitle("Text Transformations")
+        } else {
+          SettingsView(
+            store: store.scope(state: \.settings, action: \.settings),
+            microphonePermission: store.microphonePermission,
+            accessibilityPermission: store.accessibilityPermission,
+            inputMonitoringPermission: store.inputMonitoringPermission,
+            allowsLLMFeatures: store.allowsLLMFeatures
+          )
           .navigationTitle("Settings")
+        }
       case .history:
         HistoryView(store: store.scope(state: \.history, action: \.history))
           .navigationTitle("History")
@@ -177,8 +352,5 @@ struct AppView: View {
       }
     }
     .enableInjection()
-    .onAppear {
-      store.send(.onAppear)
-    }
   }
 }
