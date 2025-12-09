@@ -260,8 +260,8 @@ public struct ModelDownloadFeature {
 								)
 							}
 						}
-						// Also check Parakeet models for availability
-						for model in ParakeetModel.allCases {
+						// Also check Parakeet models for availability (skip if already in WhisperKit list)
+						for model in ParakeetModel.allCases where !names.contains(model.identifier) {
 							group.addTask {
 								ModelInfo(
 									name: model.identifier,

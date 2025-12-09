@@ -248,6 +248,13 @@ struct AppFeature {
         }
       }
       await send(.modelStatusEvaluated(isReady))
+
+      // Pre-warm the model in background if it's downloaded (loads Core ML models into memory)
+      if isReady {
+        HexLog.app.notice("Pre-warming model: \(selectedModel)")
+        try? await transcription.downloadModel(selectedModel) { _ in }
+        HexLog.app.notice("Model pre-warm complete: \(selectedModel)")
+      }
     }
   }
 
