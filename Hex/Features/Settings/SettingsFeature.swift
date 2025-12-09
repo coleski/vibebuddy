@@ -100,6 +100,7 @@ struct SettingsFeature {
   @Dependency(\.recording) var recording
   @Dependency(\.permissions) var permissions
   @Dependency(\.logExporter) var logExporter
+  @Dependency(\.capsLock) var capsLock
 
   var body: some ReducerOf<Self> {
     BindingReducer()
@@ -190,7 +191,11 @@ struct SettingsFeature {
 
       case .startSettingHotKey:
         state.$isSettingHotKey.withLock { $0 = true }
-        return .none
+        // Enable Caps Lock remap so we can detect it during hotkey setting
+        return .run { [capsLock] _ in
+          settingsLogger.info("Enabling Caps Lock remap for hotkey detection")
+          _ = capsLock.enableRemap()
+        }
 
       case .startSettingPasteLastTranscriptHotkey:
         state.$isSettingPasteLastTranscriptHotkey.withLock { $0 = true }
@@ -251,11 +256,22 @@ struct SettingsFeature {
         if keyEvent.key == .escape {
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
+          // Disable Caps Lock remap if current hotkey doesn't use it
+          let currentHasCapsLock = state.hexSettings.hotkey.modifiers.contains(kind: .capsLock)
+          if !currentHasCapsLock {
+            return .run { [capsLock] _ in
+              settingsLogger.info("Disabling Caps Lock remap - hotkey setting cancelled")
+              _ = capsLock.disableRemap()
+            }
+          }
           return .none
         }
 
         state.currentModifiers = keyEvent.modifiers.union(state.currentModifiers)
         let currentModifiers = state.currentModifiers
+
+        var hotkeySet = false
+
         if let key = keyEvent.key {
           state.$hexSettings.withLock {
             $0.hotkey.key = key
@@ -263,6 +279,7 @@ struct SettingsFeature {
           }
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
+          hotkeySet = true
         } else if keyEvent.modifiers.isEmpty {
           state.$hexSettings.withLock {
             $0.hotkey.key = nil
@@ -270,6 +287,21 @@ struct SettingsFeature {
           }
           state.$isSettingHotKey.withLock { $0 = false }
           state.currentModifiers = []
+          hotkeySet = true
+        } else {
+          // No change yet, keep building modifiers
+          return .none
+        }
+
+        // Hotkey setting completed - disable Caps Lock remap if new hotkey doesn't use it
+        if hotkeySet {
+          let newHasCapsLock = state.hexSettings.hotkey.modifiers.contains(kind: .capsLock)
+          if !newHasCapsLock {
+            return .run { [capsLock] _ in
+              settingsLogger.info("Disabling Caps Lock remap - new hotkey doesn't use Caps Lock")
+              _ = capsLock.disableRemap()
+            }
+          }
         }
         return .none
 

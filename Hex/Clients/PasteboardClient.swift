@@ -46,6 +46,12 @@ extension DependencyValues {
     }
 }
 
+private func formatDuration(_ duration: Duration) -> String {
+    let (seconds, attoseconds) = duration.components
+    let totalSeconds = Double(seconds) + Double(attoseconds) / 1e18
+    return String(format: "%.3f", totalSeconds)
+}
+
 actor PasteboardClientLive {
     @Shared(.hexSettings) var hexSettings: HexSettings
     
@@ -228,6 +234,9 @@ actor PasteboardClientLive {
             case .fn:
                 flags.insert(.maskSecondaryFn)
                 // Fn key doesn't need explicit key down/up
+            case .capsLock:
+                flags.insert(.maskAlphaShift)
+                modifierKeyCodes.append(57) // Caps Lock
             }
         }
         
@@ -352,6 +361,7 @@ pasteboardLogger.error("AppleScript paste failed: \(error)")
 
     @MainActor
     func pasteWithClipboard(_ text: String, copyToClipboard: Bool) async {
+        let methodStart = ContinuousClock.now
         print("")
         print("[CLIPBOARD] 🔵 CLIPBOARD PASTE METHOD STARTED")
         print("[CLIPBOARD] =================================")
@@ -360,10 +370,23 @@ pasteboardLogger.error("AppleScript paste failed: \(error)")
         print("[CLIPBOARD] copyToClipboard setting: \(copyToClipboard)")
 
         let pasteboard = NSPasteboard.general
+
+        let saveStart = ContinuousClock.now
         let originalItems = savePasteboardState(pasteboard: pasteboard)
+        print("[CLIPBOARD] savePasteboardState took \(formatDuration(ContinuousClock.now - saveStart))s (items: \(originalItems.count))")
+
+        let writeStart = ContinuousClock.now
         let targetChangeCount = writeAndTrackChangeCount(pasteboard: pasteboard, text: text)
-        _ = await waitForPasteboardCommit(targetChangeCount: targetChangeCount)
+        print("[CLIPBOARD] writeAndTrackChangeCount took \(formatDuration(ContinuousClock.now - writeStart))s")
+
+        let commitStart = ContinuousClock.now
+        let commitSucceeded = await waitForPasteboardCommit(targetChangeCount: targetChangeCount)
+        print("[CLIPBOARD] waitForPasteboardCommit took \(formatDuration(ContinuousClock.now - commitStart))s (succeeded: \(commitSucceeded))")
+
+        let pasteStart = ContinuousClock.now
         let pasteSucceeded = await tryPaste(text)
+        print("[CLIPBOARD] tryPaste took \(formatDuration(ContinuousClock.now - pasteStart))s (succeeded: \(pasteSucceeded))")
+        print("[CLIPBOARD] Total paste operation took \(formatDuration(ContinuousClock.now - methodStart))s")
         
         // Only restore original pasteboard contents if:
         // 1. Copying to clipboard is disabled AND
@@ -427,11 +450,28 @@ if !copyToClipboard && pasteSucceeded {
     @MainActor
     private func tryPaste(_ text: String) async -> Bool {
         // 1) Fast path: send Cmd+V (no delay)
-        if await postCmdV(delayMs: 0) { return true }
+        let cmdVStart = ContinuousClock.now
+        if await postCmdV(delayMs: 0) {
+            print("[CLIPBOARD] postCmdV succeeded in \(formatDuration(ContinuousClock.now - cmdVStart))s")
+            return true
+        }
+        print("[CLIPBOARD] postCmdV failed in \(formatDuration(ContinuousClock.now - cmdVStart))s, trying menu fallback")
+
         // 2) Menu fallback (quiet failure)
-        if PasteboardClientLive.pasteToFrontmostApp() { return true }
+        let menuStart = ContinuousClock.now
+        if PasteboardClientLive.pasteToFrontmostApp() {
+            print("[CLIPBOARD] pasteToFrontmostApp succeeded in \(formatDuration(ContinuousClock.now - menuStart))s")
+            return true
+        }
+        print("[CLIPBOARD] pasteToFrontmostApp failed in \(formatDuration(ContinuousClock.now - menuStart))s, trying AX fallback")
+
         // 3) AX insert fallback
-        if (try? Self.insertTextAtCursor(text)) != nil { return true }
+        let axStart = ContinuousClock.now
+        if (try? Self.insertTextAtCursor(text)) != nil {
+            print("[CLIPBOARD] insertTextAtCursor succeeded in \(formatDuration(ContinuousClock.now - axStart))s")
+            return true
+        }
+        print("[CLIPBOARD] insertTextAtCursor failed in \(formatDuration(ContinuousClock.now - axStart))s")
         return false
     }
 

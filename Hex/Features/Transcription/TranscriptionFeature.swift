@@ -509,7 +509,7 @@ private extension TranscriptionFeature {
     return .none
   }
 
-  /// Move file to permanent location, create a transcript record, paste text, and play sound.
+  /// Paste text immediately, then save to history in background.
   func finalizeRecordingAndStoreTranscript(
     result: String,
     duration: TimeInterval,
@@ -521,41 +521,53 @@ private extension TranscriptionFeature {
   ) async throws {
     @Shared(.hexSettings) var hexSettings: HexSettings
 
-    if hexSettings.saveTranscriptionHistory {
-      let transcript = try await transcriptPersistence.save(
-        result,
-        audioURL,
-        duration,
-        sourceAppBundleID,
-        sourceAppName
-      )
-
-      transcriptionHistory.withLock { history in
-        history.history.insert(transcript, at: 0)
-
-        if let maxEntries = hexSettings.maxHistoryEntries, maxEntries > 0 {
-          while history.history.count > maxEntries {
-            if let removedTranscript = history.history.popLast() {
-              Task {
-                 try? await transcriptPersistence.deleteAudio(removedTranscript)
-              }
-            }
-          }
-        }
-      }
-    } else {
-      try? FileManager.default.removeItem(at: audioURL)
-    }
-
+    // Paste FIRST - this is what the user cares about
     await pasteboard.paste(result)
     soundEffect.play(.pasteTranscript)
-    
+
     // Send keyboard command if configured (e.g., Enter, Cmd+Enter, etc.)
     if let autoSendCommand {
       // Small delay to ensure paste completes before sending keyboard command
       try? await Task.sleep(for: .milliseconds(100))
       await pasteboard.sendKeyboardCommand(autoSendCommand)
       transcriptionFeatureLogger.info("Auto-sent keyboard command: \(autoSendCommand.displayName)")
+    }
+
+    // NOW handle history saving in background - user doesn't need to wait for this
+    let saveHistory = hexSettings.saveTranscriptionHistory
+    let maxEntries = hexSettings.maxHistoryEntries
+    let persistence = transcriptPersistence
+
+    Task.detached(priority: .utility) {
+      if saveHistory {
+        do {
+          let transcript = try await persistence.save(
+            result,
+            audioURL,
+            duration,
+            sourceAppBundleID,
+            sourceAppName
+          )
+
+          transcriptionHistory.withLock { history in
+            history.history.insert(transcript, at: 0)
+
+            if let maxEntries, maxEntries > 0 {
+              while history.history.count > maxEntries {
+                if let removedTranscript = history.history.popLast() {
+                  Task {
+                    try? await persistence.deleteAudio(removedTranscript)
+                  }
+                }
+              }
+            }
+          }
+        } catch {
+          transcriptionFeatureLogger.error("Failed to save transcript to history: \(error)")
+        }
+      } else {
+        try? FileManager.default.removeItem(at: audioURL)
+      }
     }
   }
 }

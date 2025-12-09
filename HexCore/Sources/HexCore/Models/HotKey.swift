@@ -14,6 +14,7 @@ public struct Modifier: Identifiable, Codable, Equatable, Hashable, Comparable, 
     case shift
     case control
     case fn
+    case capsLock
 
     var order: Int {
       switch self {
@@ -22,6 +23,7 @@ public struct Modifier: Identifiable, Codable, Equatable, Hashable, Comparable, 
       case .shift: return 2
       case .control: return 3
       case .fn: return 4
+      case .capsLock: return 5
       }
     }
 
@@ -32,6 +34,7 @@ public struct Modifier: Identifiable, Codable, Equatable, Hashable, Comparable, 
       case .shift: return "Shift"
       case .control: return "Control"
       case .fn: return "fn"
+      case .capsLock: return "Caps Lock"
       }
     }
 
@@ -42,12 +45,13 @@ public struct Modifier: Identifiable, Codable, Equatable, Hashable, Comparable, 
       case .command: return "⌘"
       case .control: return "⌃"
       case .fn: return "fn"
+      case .capsLock: return "⇪"
       }
     }
 
     public var supportsSideSelection: Bool {
       switch self {
-      case .fn:
+      case .fn, .capsLock:
         return false
       default:
         return true
@@ -100,6 +104,7 @@ public struct Modifier: Identifiable, Codable, Equatable, Hashable, Comparable, 
   public static let shift = Modifier(kind: .shift)
   public static let control = Modifier(kind: .control)
   public static let fn = Modifier(kind: .fn)
+  public static let capsLock = Modifier(kind: .capsLock)
 
   public func with(side: Side) -> Modifier {
     Modifier(kind: kind, side: side)

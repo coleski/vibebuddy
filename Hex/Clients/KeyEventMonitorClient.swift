@@ -13,6 +13,9 @@ import Sauce
 
 private let logger = HexLog.keyEvent
 
+// Key code for F18 (Caps Lock is remapped to this via hidutil)
+private let kVK_F18: Int = 0x4F  // 79 decimal
+
 struct KeyEventMonitorToken: Sendable {
   private let cancelHandler: @Sendable () -> Void
 
@@ -28,11 +31,15 @@ struct KeyEventMonitorToken: Sendable {
 }
 
 public extension KeyEvent {
-  init(cgEvent: CGEvent, type: CGEventType, isFnPressed: Bool) {
+  init(cgEvent: CGEvent, type: CGEventType, isFnPressed: Bool, isCapsLockPressed: Bool = false) {
     let keyCode = Int(cgEvent.getIntegerValueField(.keyboardEventKeycode))
+
+    // F18 (remapped Caps Lock) should only appear as a modifier, not as a key
+    let isF18 = keyCode == kVK_F18
+
     // Accessing keyboard layout / input source via Sauce must be on main thread.
     let key: Key?
-    if cgEvent.type == .keyDown {
+    if cgEvent.type == .keyDown && !isF18 {
       if Thread.isMainThread {
         key = Sauce.shared.key(for: keyCode)
       } else {
@@ -45,6 +52,9 @@ public extension KeyEvent {
     var modifiers = Modifiers.from(carbonFlags: cgEvent.flags)
     if !isFnPressed {
       modifiers = modifiers.removing(kind: .fn)
+    }
+    if isCapsLockPressed {
+      modifiers = modifiers.union([.capsLock])
     }
     self.init(key: key, modifiers: modifiers)
   }
@@ -101,6 +111,7 @@ class KeyEventMonitorClientLive {
   private var inputMonitoringTrusted = false
   private var trustMonitorTask: Task<Void, Never>?
   private var isFnPressed = false
+  private var isCapsLockPressed = false
   private var hasPromptedForAccessibilityTrust = false
 
   /// Adaptive polling interval - starts fast, slows down when stable
@@ -413,8 +424,14 @@ class KeyEventMonitorClientLive {
           }
 
           hotKeyClientLive.updateFnStateIfNeeded(type: type, cgEvent: cgEvent)
+          hotKeyClientLive.updateCapsLockStateIfNeeded(type: type, cgEvent: cgEvent)
 
-          let keyEvent = KeyEvent(cgEvent: cgEvent, type: type, isFnPressed: hotKeyClientLive.isFnPressed)
+          let keyEvent = KeyEvent(
+            cgEvent: cgEvent,
+            type: type,
+            isFnPressed: hotKeyClientLive.isFnPressed,
+            isCapsLockPressed: hotKeyClientLive.isCapsLockPressed
+          )
           let handledByKeyHandler = hotKeyClientLive.processKeyEvent(keyEvent)
           let handledByInputHandler = hotKeyClientLive.processInputEvent(.keyboard(keyEvent))
 
@@ -500,6 +517,15 @@ extension KeyEventMonitorClientLive {
     let keyCode = Int(cgEvent.getIntegerValueField(.keyboardEventKeycode))
     guard keyCode == kVK_Function else { return }
     isFnPressed = cgEvent.flags.contains(.maskSecondaryFn)
+  }
+
+  /// Updates Caps Lock state when F18 is pressed/released (Caps Lock remapped to F18).
+  func updateCapsLockStateIfNeeded(type: CGEventType, cgEvent: CGEvent) {
+    // F18 comes as keyDown/keyUp, not flagsChanged
+    guard type == .keyDown || type == .keyUp else { return }
+    let keyCode = Int(cgEvent.getIntegerValueField(.keyboardEventKeycode))
+    guard keyCode == kVK_F18 else { return }
+    isCapsLockPressed = (type == .keyDown)
   }
 
   private func refreshTrustedFlag(promptIfUntrusted: Bool) {

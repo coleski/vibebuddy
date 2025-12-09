@@ -157,6 +157,9 @@
     "Capability" : {
 
     },
+    "Caps Lock is remapped system-wide while Hex is running" : {
+
+    },
     "Changelog" : {
       "localizations" : {
         "de" : {

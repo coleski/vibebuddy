@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import HexCore
 import SwiftUI
 
 class HexAppDelegate: NSObject, NSApplicationDelegate {
@@ -7,6 +8,7 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 	var statusItem: NSStatusItem!
 
 	@Dependency(\.soundEffects) var soundEffect
+	@Dependency(\.capsLock) var capsLock
 	@Shared(.hexSettings) var hexSettings: HexSettings
 
 	func applicationDidFinishLaunching(_: Notification) {
@@ -14,7 +16,7 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 			print("TESTING")
 			return
 		}
-		
+
 		// Store self in static property for menu access
 		HexApp.sharedDelegate = self
 
@@ -22,7 +24,13 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 			await soundEffect.preloadSounds()
 		}
 		print("HexAppDelegate did finish launching")
-		
+
+		// Handle Caps Lock remap crash recovery
+		handleCapsLockCrashRecovery()
+
+		// Enable Caps Lock remap if needed
+		enableCapsLockRemapIfNeeded()
+
 		// Clean up any old temporary recording files from previous runs
 		cleanupOldTemporaryRecordingFiles()
 
@@ -111,8 +119,46 @@ class HexAppDelegate: NSObject, NSApplicationDelegate {
 	}
 	
 	func applicationWillTerminate(_ notification: Notification) {
+		// Disable Caps Lock remap to restore normal Caps Lock behavior
+		disableCapsLockRemap()
+
 		// Clean up any temporary recording files when app terminates
 		cleanupTemporaryRecordingFiles()
+	}
+
+	// MARK: - Caps Lock Management
+
+	/// Checks if the user's hotkey uses Caps Lock
+	private var hotkeyUsesCapsLock: Bool {
+		hexSettings.hotkey.modifiers.contains(kind: .capsLock)
+	}
+
+	/// Handles crash recovery for Caps Lock remap
+	private func handleCapsLockCrashRecovery() {
+		if capsLock.checkCrashRecovery() {
+			// Caps Lock was left remapped from a previous crash
+			// Clean it up unless the user's current hotkey uses Caps Lock
+			if !hotkeyUsesCapsLock {
+				print("Cleaning up Caps Lock remap from previous crash")
+				capsLock.cleanupFromCrash()
+			}
+		}
+	}
+
+	/// Enables Caps Lock remap if the user's hotkey uses Caps Lock
+	private func enableCapsLockRemapIfNeeded() {
+		if hotkeyUsesCapsLock {
+			print("Enabling Caps Lock remap for hotkey")
+			_ = capsLock.enableRemap()
+		}
+	}
+
+	/// Disables Caps Lock remap if it's currently active
+	private func disableCapsLockRemap() {
+		if capsLock.isActive() {
+			print("Disabling Caps Lock remap")
+			_ = capsLock.disableRemap()
+		}
 	}
 	
 	private func cleanupTemporaryRecordingFiles() {

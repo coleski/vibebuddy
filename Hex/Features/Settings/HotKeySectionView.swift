@@ -7,6 +7,10 @@ struct HotKeySectionView: View {
     @ObserveInjection var inject
     @Bindable var store: StoreOf<SettingsFeature>
 
+    private var isCapsLockHotkey: Bool {
+        store.hexSettings.hotkey.modifiers.contains(kind: .capsLock) && store.hexSettings.hotkey.key == nil
+    }
+
     var body: some View {
         Section("Hot Key") {
             let hotKey = store.hexSettings.hotkey
@@ -29,7 +33,8 @@ struct HotKeySectionView: View {
 
                 if !store.isSettingHotKey,
                    hotKey.key == nil,
-                   !hotKey.modifiers.isEmpty {
+                   !hotKey.modifiers.isEmpty,
+                   !isCapsLockHotkey {
                     ModifierSideControls(
                         modifiers: hotKey.modifiers,
                         onSelect: { kind, side in
@@ -38,6 +43,13 @@ struct HotKeySectionView: View {
                     )
                     .transition(.opacity)
                 }
+            }
+
+            // Show info text when Caps Lock is the hotkey
+            if isCapsLockHotkey {
+                Text("Caps Lock is remapped system-wide while Hex is running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             // Double-tap toggle (for key+modifier combinations)
