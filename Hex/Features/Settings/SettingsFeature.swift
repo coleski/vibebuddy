@@ -16,7 +16,7 @@ extension SharedReaderKey
   static var isSettingHotKey: Self {
     Self[.inMemory("isSettingHotKey"), default: false]
   }
-
+  
   static var isSettingPasteLastTranscriptHotkey: Self {
     Self[.inMemory("isSettingPasteLastTranscriptHotkey"), default: false]
   }
@@ -37,7 +37,6 @@ struct SettingsFeature {
     @Shared(.isSettingPasteLastTranscriptHotkey) var isSettingPasteLastTranscriptHotkey: Bool = false
     @Shared(.isSettingAIKey) var isSettingAIKey: Bool = false
     @Shared(.transcriptionHistory) var transcriptionHistory: TranscriptionHistory
-    @Shared(.hotkeyPermissionState) var hotkeyPermissionState: HotkeyPermissionState
     @Shared(.textTransformations) var textTransformations: TextTransformationsState
 
     var languages: IdentifiedArrayOf<Language> = []
@@ -182,8 +181,7 @@ struct SettingsFeature {
             NotificationCenter.default.removeObserver(deviceDisconnectionObserver)
           }
 
-          for try await rawKeyEvent in await keyEventMonitor.listenForKeyPress() {
-            let keyEvent = KeyEvent(key: rawKeyEvent.key, modifiers: rawKeyEvent.modifiers)
+          for try await keyEvent in await keyEventMonitor.listenForKeyPress() {
             await send(.keyEvent(keyEvent))
           }
           
@@ -246,7 +244,7 @@ struct SettingsFeature {
           }
           return .none
         }
-
+        
         // Handle main recording hotkey setting
         guard state.isSettingHotKey else { return .none }
 
@@ -293,23 +291,26 @@ struct SettingsFeature {
         state.$hexSettings.withLock { $0.recordingAudioBehavior = behavior }
         return .none
 
-      // Permission requests
+      // Permission requests - trigger refresh after requesting so AppFeature updates its state
       case .requestMicrophone:
         settingsLogger.info("User requested microphone permission from settings")
         return .run { _ in
           _ = await permissions.requestMicrophone()
+          permissions.triggerPermissionRefresh()
         }
 
       case .requestAccessibility:
         settingsLogger.info("User requested accessibility permission from settings")
         return .run { _ in
           await permissions.requestAccessibility()
+          permissions.triggerPermissionRefresh()
         }
 
       case .requestInputMonitoring:
         settingsLogger.info("User requested input monitoring permission from settings")
         return .run { _ in
           _ = await permissions.requestInputMonitoring()
+          permissions.triggerPermissionRefresh()
         }
 
       // Model Management
@@ -333,6 +334,13 @@ struct SettingsFeature {
         
       case let .availableInputDevicesLoaded(devices):
         state.availableInputDevices = devices
+
+        // Auto-reset invalid microphone ID to prevent Picker warnings
+        if let selectedID = state.hexSettings.selectedMicrophoneID,
+           !devices.contains(where: { $0.id == selectedID }) {
+          settingsLogger.info("Resetting invalid microphone ID '\(selectedID)' - device no longer available")
+          state.$hexSettings.withLock { $0.selectedMicrophoneID = nil }
+        }
         return .none
         
       case let .toggleSaveTranscriptionHistory(enabled):
