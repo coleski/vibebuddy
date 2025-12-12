@@ -302,7 +302,7 @@ private extension TranscriptionFeature {
       soundEffect.play(.startRecording)
 
       if preventSleep {
-        await sleepManagement.preventSleep(reason: "Hex Voice Recording")
+        await sleepManagement.preventSleep(reason: "vibebuddy Voice Recording")
       }
       await recording.startRecording()
     }
@@ -394,7 +394,7 @@ private extension TranscriptionFeature {
 
     // Check for force quit command (emergency escape hatch)
     if ForceQuitCommandDetector.matches(result) {
-      transcriptionFeatureLogger.fault("Force quit voice command recognized; terminating Hex.")
+      transcriptionFeatureLogger.fault("Force quit voice command recognized; terminating vibebuddy.")
       return .run { _ in
         try? FileManager.default.removeItem(at: audioURL)
         await MainActor.run {
@@ -645,7 +645,7 @@ struct TranscriptionView: View {
 private enum ForceQuitCommandDetector {
   static func matches(_ text: String) -> Bool {
     let normalized = normalize(text)
-    return normalized == "force quit hex now" || normalized == "force quit hex"
+    return normalized == "force quit vibebuddy now" || normalized == "force quit vibebuddy"
   }
 
   private static func normalize(_ text: String) -> String {

@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- 7e325ad: Fix Sequoia hotkey deadlock by removing Input Monitoring guard that prevented CGEventTap creation. Tap creation triggers permission prompt naturally. Re-add 'force quit Hex now' voice escape hatch from v0.5.8 (#122 #124)
+- 7e325ad: Fix Sequoia hotkey deadlock by removing Input Monitoring guard that prevented CGEventTap creation. Tap creation triggers permission prompt naturally. Re-add 'force quit vibebuddy now' voice escape hatch from v0.5.8 (#122 #124)
 - 7e325ad: Remove preferred provider concept - transformations now strictly use configured providerID from text_transformations.json. Throws error if provider not found instead of falling back.
 - 7e325ad: Add missing-model callout and focus settings when transcription starts without a model
 
@@ -64,7 +64,7 @@
 
 ### Patch Changes
 
-- 03b81c7: Let the hotkey tap start even when Input Monitoring is missing so Sequoia users get prompts again, while keeping the accessibility watchdog (#122 #124). Add a spoken “force quit Hex now” escape hatch in case permissions clobber input.
+- 03b81c7: Let the hotkey tap start even when Input Monitoring is missing so Sequoia users get prompts again, while keeping the accessibility watchdog (#122 #124). Add a spoken "force quit vibebuddy now" escape hatch in case permissions clobber input.
 
 ## 0.5.7
 
@@ -139,14 +139,14 @@
 - e50478d: Adopt Changesets for SemVer + changelog management, wire release.ts to fail without pending fragments, and sync the aggregated release notes into the bundled changelog + GitHub releases.
 - 2fbbe7a: Wait for NSPasteboard changeCount to advance before pasting so panel apps always receive the latest transcript (#69, #42).
 
-All notable changes to Hex are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project follows [Semantic Versioning](https://semver.org/).
+All notable changes to vibebuddy are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
 ### Added
 
 - Added NVIDIA Parakeet TDT v3 support with a redesigned model manager so you can swap between Parakeet and curated Whisper variants without juggling files (#71).
-- Added first-run model bootstrap: Hex now automatically downloads the recommended model, shows progress/cancel controls, and prevents transcription from starting until a model is ready (#97).
+- Added first-run model bootstrap: vibebuddy now automatically downloads the recommended model, shows progress/cancel controls, and prevents transcription from starting until a model is ready (#97).
 - Added a global hotkey to paste the last transcript plus contextual actions to cancel or delete model downloads directly from Settings, making recovery workflows faster.
 
 ### Improved
@@ -160,7 +160,7 @@ All notable changes to Hex are documented in this file. The format is based on [
 
 - Printable-key hotkeys (for example `⌘+'`) can now trigger short recordings just like modifier-only chords, so quick phrases aren’t discarded anymore (#113).
 - Fn and other modifier-only hotkeys respect left/right side selection, ignore phantom arrow events, and stop firing when combined with other keys, resolving long-standing regressions (#89, #81, #87).
-- Paste reliability: Hex now waits for the clipboard write to commit before firing ⌘V, so panel apps like Alfred, Raycast, and IntelliBar always receive the latest transcript instead of the previous clipboard contents (#69, #42).
+- Paste reliability: vibebuddy now waits for the clipboard write to commit before firing ⌘V, so panel apps like Alfred, Raycast, and IntelliBar always receive the latest transcript instead of the previous clipboard contents (#69, #42).
 
 ## 1.4
 
@@ -178,7 +178,7 @@ All notable changes to Hex are documented in this file. The format is based on [
 
 ### Fixed
 
-- Fix issue with Hex showing in Mission Control and Cmd+Tab
+- Fix issue with vibebuddy showing in Mission Control and Cmd+Tab
 - Improve paste behavior when text input fails
 - Rework audio pausing logic to make it more reliable
 

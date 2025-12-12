@@ -2,7 +2,7 @@
 import Foundation
 import SwiftMCP
 
-@MCPServer(name: "Hex Tools")
+@MCPServer(name: "vibebuddy Tools")
 actor HexToolServerActor {
     private var allowedGroups: Set<HexToolGroup>
     private let automation: HexApplicationAutomation

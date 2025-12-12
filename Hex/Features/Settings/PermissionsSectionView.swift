@@ -36,7 +36,7 @@ struct PermissionsSectionView: View {
 		if inputMonitoringPermission != .granted {
 			VStack(alignment: .leading, spacing: 6) {
 				Label {
-					Text("Input Monitoring is required so Hex can listen for your hotkey.")
+					Text("Input Monitoring is required so vibebuddy can listen for your hotkey.")
 						.font(.callout)
 						.foregroundStyle(.primary)
 				} icon: {

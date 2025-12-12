@@ -157,7 +157,7 @@
     "Capability" : {
 
     },
-    "Caps Lock is remapped system-wide while Hex is running" : {
+    "Caps Lock is remapped system-wide while vibebuddy is running" : {
 
     },
     "Changelog" : {
@@ -419,13 +419,13 @@
         }
       }
     },
-    "Hex is open source" : {
+    "vibebuddy is open source" : {
       "comment" : "In about section in settings.",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hex ist Open Source"
+            "value" : "vibebuddy ist Open Source"
           }
         }
       }
@@ -471,7 +471,7 @@
     "Input Device" : {
 
     },
-    "Input Monitoring is required so Hex can listen for your hotkey." : {
+    "Input Monitoring is required so vibebuddy can listen for your hotkey." : {
 
     },
     "Launch Ollama" : {
@@ -690,7 +690,7 @@
     "Saved to %@" : {
 
     },
-    "Saves the last 30 minutes of Hex diagnostics so you can share them with support." : {
+    "Saves the last 30 minutes of vibebuddy diagnostics so you can share them with support." : {
 
     },
     "Selected device not connected. System default will be used." : {

@@ -44,7 +44,7 @@ private struct LogExportClientLive {
     panel.allowedContentTypes = [.log, .plainText]
     panel.nameFieldStringValue = defaultFileName()
     panel.canCreateDirectories = true
-    panel.title = "Save Hex Diagnostic Logs"
+    panel.title = "Save vibebuddy Diagnostic Logs"
     panel.prompt = "Save"
 
     let response = panel.runModal()
@@ -58,7 +58,7 @@ private struct LogExportClientLive {
   private func defaultFileName() -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
-    return "Hex-Logs-\(formatter.string(from: Date())).log"
+    return "vibebuddy-Logs-\(formatter.string(from: Date())).log"
   }
 
   private func collectLogs(lastMinutes minutes: Int) throws -> String {
@@ -79,7 +79,7 @@ private struct LogExportClientLive {
     }
 
     if lines.isEmpty {
-      lines.append("No Hex log entries captured in the last \(minutes) minute(s).")
+      lines.append("No vibebuddy log entries captured in the last \(minutes) minute(s).")
     }
     return lines.joined(separator: "\n")
   }

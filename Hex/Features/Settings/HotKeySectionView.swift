@@ -47,7 +47,7 @@ struct HotKeySectionView: View {
 
             // Show info text when Caps Lock is the hotkey
             if isCapsLockHotkey {
-                Text("Caps Lock is remapped system-wide while Hex is running")
+                Text("Caps Lock is remapped system-wide while vibebuddy is running")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
