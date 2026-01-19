@@ -104,146 +104,137 @@ def play_sound(sound_path):
         print(f"Sound error: {e}")
 
 class OverlayOrb:
-    """VibeBuddy-style capsule indicator with expressive face"""
+    """VibeBuddy-style capsule indicator with expressive face (PIL-rendered for antialiasing)"""
 
     def __init__(self):
         self.root = None
-        self.canvas = None
+        self.label = None
         self.state = 'loading'
-        self.eye_spread = 0  # Animation: how far eyes spread apart
-        self.pulse_scale = 1.0  # Animation: pulse scale
+        self.eye_spread = 0
         self.animation_running = False
-        self.command_queue = queue.Queue()  # Thread-safe command queue
-        self.rainbow_hue = 0  # For rainbow animation
+        self.command_queue = queue.Queue()
+        self.rainbow_hue = 0
+        self.tk_image = None  # Keep reference to prevent GC
         self._setup_window()
 
     def _setup_window(self):
         """Create the overlay window"""
         self.root = tk.Toplevel()
-        self.root.withdraw()  # Start hidden
+        self.root.withdraw()
 
-        # Window properties: borderless, always on top
         self.root.overrideredirect(True)
         self.root.attributes('-topmost', True)
-
-        # Use a specific color for transparency
-        self.transparent_color = '#010101'  # Near-black
-        self.root.attributes('-transparentcolor', self.transparent_color)
-
-        # Prevent showing in taskbar (Windows-specific)
         self.root.attributes('-toolwindow', True)
 
-        # Capsule size: width x height (wider than tall for pill shape)
-        self.width = 56
-        self.height = 32
+        # Exact vibebuddy dimensions (scaled 3x for crispness)
+        self.scale = 3  # Render at 3x then display
+        self.width = 56  # Display width
+        self.height = 16  # Display height (vibebuddy is 16px tall)
+
+        # Use magenta for transparency (less likely to appear in face)
+        self.transparent_color = '#FF00FF'
+        self.root.attributes('-transparentcolor', self.transparent_color)
+        self.root.configure(bg=self.transparent_color)
+
         screen_w = self.root.winfo_screenwidth()
         x = (screen_w - self.width) // 2
-        y = 30  # Near top of screen
+        y = 20  # Very top of screen
         self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
-        # Canvas for drawing
-        self.canvas = tk.Canvas(self.root, width=self.width, height=self.height,
-                                bg=self.transparent_color, highlightthickness=0)
-        self.canvas.pack()
-        print(f"Overlay window created at {x},{y}")
+        # Use a label to display PIL-rendered image
+        self.label = tk.Label(self.root, bg=self.transparent_color, bd=0)
+        self.label.pack()
+        print(f"Overlay window created at {x},{y} ({self.width}x{self.height})")
 
-    def _draw_rounded_rect(self, x1, y1, x2, y2, radius, **kwargs):
-        """Draw a rounded rectangle (capsule shape)"""
-        points = [
-            x1 + radius, y1,
-            x2 - radius, y1,
-            x2, y1,
-            x2, y1 + radius,
-            x2, y2 - radius,
-            x2, y2,
-            x2 - radius, y2,
-            x1 + radius, y2,
-            x1, y2,
-            x1, y2 - radius,
-            x1, y1 + radius,
-            x1, y1,
-        ]
-        return self.canvas.create_polygon(points, smooth=True, **kwargs)
+    def _draw_pill(self, draw, x, y, w, h, fill, outline=None, outline_width=0):
+        """Draw an antialiased pill/capsule shape"""
+        r = h // 2  # Full radius for pill shape
+        # Left semicircle
+        draw.ellipse([x, y, x + h, y + h], fill=fill, outline=outline, width=outline_width)
+        # Right semicircle
+        draw.ellipse([x + w - h, y, x + w, y + h], fill=fill, outline=outline, width=outline_width)
+        # Middle rectangle
+        draw.rectangle([x + r, y, x + w - r, y + h], fill=fill)
+        if outline and outline_width:
+            draw.line([x + r, y, x + w - r, y], fill=outline, width=outline_width)
+            draw.line([x + r, y + h, x + w - r, y + h], fill=outline, width=outline_width)
 
     def _draw_face(self):
-        """Draw the indicator based on current state"""
-        self.canvas.delete('all')
+        """Render the indicator using PIL for smooth antialiasing"""
+        import colorsys
+        from PIL import ImageTk
 
-        w, h = self.width, self.height
+        s = self.scale
+        w, h = self.width * s, self.height * s
+
+        # Create RGBA image with transparent background
+        img = Image.new('RGBA', (w, h), (255, 0, 255, 0))  # Transparent magenta
+        draw = ImageDraw.Draw(img)
+
         cx, cy = w // 2, h // 2
-        pad = 2
+        pad = 2 * s
 
-        # Background capsule based on state
+        # Background pill based on state
         if self.state == 'recording':
-            # Red capsule with subtle glow effect
-            self._draw_rounded_rect(pad, pad, w-pad, h-pad, h//2-pad,
-                                    fill='#FF3B30', outline='#FF6B60', width=2)
+            # Red pill - vibebuddy style
+            self._draw_pill(draw, pad, pad, w - 2*pad, h - 2*pad,
+                           fill='#FF3B30', outline='#FF6B60', outline_width=s)
             eye_color = 'white'
+            mouth_color = 'white'
         elif self.state == 'processing':
-            # White capsule with colored border (simplified rainbow)
+            # White pill with rainbow border
             border_color = self._get_rainbow_color()
-            self._draw_rounded_rect(pad, pad, w-pad, h-pad, h//2-pad,
-                                    fill='white', outline=border_color, width=3)
+            self._draw_pill(draw, pad, pad, w - 2*pad, h - 2*pad,
+                           fill='white', outline=border_color, outline_width=2*s)
             eye_color = '#333333'
+            mouth_color = '#333333'
         else:
-            # Default: subtle gray
-            self._draw_rounded_rect(pad, pad, w-pad, h-pad, h//2-pad,
-                                    fill='#E0E0E0', outline='#CCCCCC', width=1)
-            eye_color = '#333333'
+            # Subtle gray
+            self._draw_pill(draw, pad, pad, w - 2*pad, h - 2*pad,
+                           fill='#E8E8E8', outline='#CCCCCC', outline_width=s)
+            eye_color = '#555555'
+            mouth_color = '#555555'
 
-        # Eyes - positioned in upper half
-        eye_y = cy - 2
-        base_spread = 10
-        spread = base_spread + self.eye_spread
-        eye_size = 3
+        # Eyes
+        eye_y = cy
+        base_spread = 12 * s
+        spread = base_spread + self.eye_spread * s
+        eye_r = 2 * s
 
         # Left eye
-        self.canvas.create_oval(
-            cx - spread - eye_size, eye_y - eye_size,
-            cx - spread + eye_size, eye_y + eye_size,
-            fill=eye_color, outline=''
-        )
-
+        draw.ellipse([cx - spread - eye_r, eye_y - eye_r,
+                      cx - spread + eye_r, eye_y + eye_r], fill=eye_color)
         # Right eye
-        self.canvas.create_oval(
-            cx + spread - eye_size, eye_y - eye_size,
-            cx + spread + eye_size, eye_y + eye_size,
-            fill=eye_color, outline=''
-        )
+        draw.ellipse([cx + spread - eye_r, eye_y - eye_r,
+                      cx + spread + eye_r, eye_y + eye_r], fill=eye_color)
 
-        # Mouth based on state
-        mouth_y = cy + 6
-        mouth_color = eye_color
+        # Mouth based on state (positioned to the right of center for pill shape)
+        mouth_x = cx + 0  # Centered
+        mouth_y = cy
 
         if self.state == 'recording':
-            # Surprised "O" mouth
-            self.canvas.create_oval(
-                cx - 4, mouth_y - 3,
-                cx + 4, mouth_y + 4,
-                fill=mouth_color, outline=''
-            )
+            # Small "o" mouth (surprised)
+            mr = 2 * s
+            draw.ellipse([mouth_x - mr, mouth_y - mr, mouth_x + mr, mouth_y + mr],
+                        fill=mouth_color)
         elif self.state == 'processing':
-            # Thinking dots "..."
-            dot_size = 2
-            for i, dx in enumerate([-6, 0, 6]):
-                self.canvas.create_oval(
-                    cx + dx - dot_size, mouth_y - dot_size,
-                    cx + dx + dot_size, mouth_y + dot_size,
-                    fill=mouth_color, outline=''
-                )
-        else:
-            # Smile curve
-            self.canvas.create_arc(
-                cx - 8, mouth_y - 6,
-                cx + 8, mouth_y + 6,
-                start=200, extent=140,
-                style='arc', outline=mouth_color, width=2
-            )
+            # Three dots "..."
+            dot_r = 1 * s
+            for dx in [-4*s, 0, 4*s]:
+                draw.ellipse([mouth_x + dx - dot_r, mouth_y - dot_r,
+                             mouth_x + dx + dot_r, mouth_y + dot_r], fill=mouth_color)
+
+        # Resize down for display (antialiasing via LANCZOS)
+        img = img.resize((self.width, self.height), Image.LANCZOS)
+
+        # Convert to PhotoImage
+        self.tk_image = ImageTk.PhotoImage(img)
+        self.label.configure(image=self.tk_image)
 
     def _get_rainbow_color(self):
         """Get current rainbow color for processing animation"""
         import colorsys
-        r, g, b = colorsys.hsv_to_rgb(self.rainbow_hue / 360, 0.8, 1.0)
+        r, g, b = colorsys.hsv_to_rgb(self.rainbow_hue / 360, 0.9, 1.0)
         return f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}'
 
     def set_state(self, state):
@@ -308,12 +299,10 @@ class OverlayOrb:
 
     def _do_show(self):
         """Actually show overlay (main thread only)"""
-        print("Overlay _do_show called")
         self._draw_face()
         self.root.deiconify()
         self.root.lift()
-        self.root.attributes('-topmost', True)  # Ensure on top
-        print(f"Overlay visible, geometry: {self.root.geometry()}")
+        self.root.attributes('-topmost', True)
 
     def _do_hide(self):
         """Actually hide overlay (main thread only)"""
