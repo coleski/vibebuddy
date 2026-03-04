@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Large model files — download via chirp-setup, don't commit
+src/chirp/assets/models/

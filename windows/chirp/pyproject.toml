@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chirp"
+version = "0.1.0"
+description = "parakeetV3 powered cpu only Speech-To-Text Local Inference on Windows. Inspired by hyprwhspr on Omarchy."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface_hub>=0.24",
+    "keyboard>=0.13.5",
+    "numpy>=2.3.4",
+    "onnx-asr[cpu,hub]>=0.7.0",
+    "platformdirs>=4.5.0",
+    "pyperclip>=1.11.0",
+    "rich>=14.2.0",
+    "sounddevice>=0.5.3",
+    "pystray>=0.19.5",
+    "Pillow>=10.0.0",
+]
+
+[project.scripts]
+chirp = "chirp.main:main"
+chirp-setup = "chirp.setup:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chirp"]
+
+[tool.hatch.build.targets.wheel.package-data]
+"chirp" = ["assets/*.wav"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/chirp", "README.md", "pyproject.toml", "uv.lock"]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.19.0",
+]
