@@ -20,6 +20,7 @@ a = Analysis(
         'chirp.keyboard_shortcuts',
         'chirp.text_injector',
         'chirp.tray_icon',
+        'chirp.overlay',
         'chirp.logger',
         'chirp.setup',
         'onnxruntime',

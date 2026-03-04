@@ -15,6 +15,7 @@ from .audio_feedback import AudioFeedback
 from .config_manager import ConfigManager
 from .keyboard_shortcuts import KeyboardShortcutManager
 from .logger import get_logger
+from .overlay import OverlayOrb
 from .parakeet_manager import ModelNotPreparedError, ParakeetManager
 from .text_injector import TextInjector
 from .tray_icon import TrayIcon
@@ -81,13 +82,14 @@ class ChirpApp:
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="Transcriber")
         self._stop_event = threading.Event()
         self._tray = TrayIcon(on_quit=self._stop_event.set)
+        self._overlay = OverlayOrb()
 
     def run(self) -> None:
         try:
             self._register_hotkey()
             self._tray.run_detached()
             self.logger.info("Chirp ready. Toggle recording with %s", self.config.primary_shortcut)
-            self._stop_event.wait()
+            self._overlay.run_mainloop(self._stop_event)  # blocks until quit
         except KeyboardInterrupt:
             self.logger.info("Interrupted, exiting.")
         finally:
@@ -133,6 +135,7 @@ class ChirpApp:
             return
         self._recording = True
         self._tray.set_recording(True)
+        self._overlay.set_state("recording")
         self.audio_feedback.play_start(self.config.start_sound_path)
         self.logger.info("Recording started")
 
@@ -155,6 +158,7 @@ class ChirpApp:
         waveform = self.audio_capture.stop()
         self._recording = False
         self._tray.set_recording(False)
+        self._overlay.set_state("processing")
         self.audio_feedback.play_stop(self.config.stop_sound_path)
         self.logger.info("Recording stopped (%s samples)", waveform.size)
         self._tray.set_processing(True)
@@ -170,11 +174,13 @@ class ChirpApp:
         except Exception as exc:
             self.logger.exception("Transcription failed: %s", exc)
             self._tray.set_processing(False)
+            self._overlay.set_state("idle")
             self.audio_feedback.play_error(self.config.error_sound_path)
             return
         duration = time.perf_counter() - start_time
         self.logger.debug("Transcription finished in %.2fs (chars=%s)", duration, len(text))
         self._tray.set_processing(False)
+        self._overlay.set_state("idle")
         if not text.strip():
             self.logger.info("Transcription empty; skipping paste")
             return
