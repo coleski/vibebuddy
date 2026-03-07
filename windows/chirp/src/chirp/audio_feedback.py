@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import platform
+import shutil
+import tempfile
 import wave
 from contextlib import contextmanager
 from pathlib import Path
@@ -68,6 +71,36 @@ class AudioFeedback:
                 )
             else:
                 self._logger.debug("Audio feedback initialized using %s", backend)
+
+            # Pre-cache default sounds so first playback is instant
+            self._precache()
+
+    def _precache(self) -> None:
+        """Load default sounds into cache at init time so first play is instant."""
+        if not self._use_sounddevice and self._has_winsound:
+            # winsound needs persistent file paths — extract assets to a temp dir
+            # that outlives the context manager
+            self._sound_dir = tempfile.mkdtemp(prefix="chirp_sounds_")
+
+        for asset in ("ping-up.wav", "ping-down.wav"):
+            try:
+                with self._get_sound_path(asset, None) as path:
+                    if not self._use_sounddevice and self._has_winsound:
+                        # Copy to persistent temp dir so path stays valid
+                        dest = Path(self._sound_dir) / asset
+                        shutil.copy2(path, dest)
+                        self._cache[asset] = str(dest)
+                    else:
+                        self._load_and_cache(path, asset)
+            except Exception as exc:
+                self._logger.warning("Failed to pre-cache %s: %s", asset, exc)
+
+        # Pre-initialize sounddevice by querying devices (no audible output)
+        if self._use_sounddevice and sd is not None:
+            try:
+                sd.query_devices()
+            except Exception:
+                pass
 
     def play_start(self, override_path: Optional[str] = None) -> None:
         self._play_sound("ping-up.wav", override_path)

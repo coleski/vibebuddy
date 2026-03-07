@@ -19,25 +19,48 @@ class KeyboardShortcutManager:
     ) -> None:
         """Hold to record, release to stop.
 
-        The key is suppressed so it never reaches the OS (no backtick typed,
-        no modifier-stuck issues). on_press fires on the first KEY_DOWN (key
-        repeat events are ignored). on_release fires on KEY_UP.
+        Uses separate on_press_key/on_release_key with suppress=True.
+        Callbacks do MINIMAL work (append to queue) to avoid blocking
+        the Windows low-level keyboard hook. A dispatcher thread runs
+        the actual handlers.
         """
-        _held = False
+        event_queue: list[str] = []
+        event_lock = threading.Lock()
+        event_signal = threading.Event()
 
-        def _on_event(event: keyboard.KeyboardEvent) -> None:
-            nonlocal _held
-            if event.event_type == keyboard.KEY_DOWN:
-                if not _held:
-                    _held = True
-                    threading.Thread(target=on_press, daemon=True).start()
-            elif event.event_type == keyboard.KEY_UP:
-                if _held:
-                    _held = False
-                    threading.Thread(target=on_release, daemon=True).start()
+        def _on_press(event: keyboard.KeyboardEvent) -> None:
+            with event_lock:
+                event_queue.append("press")
+            event_signal.set()
 
-        keyboard.hook_key(key, _on_event, suppress=True)
-        self._logger.debug("Registered push-to-talk key (hook_key, suppress): %s", key)
+        def _on_release(event: keyboard.KeyboardEvent) -> None:
+            with event_lock:
+                event_queue.append("release")
+            event_signal.set()
+
+        def _dispatcher() -> None:
+            """Separate thread that processes events off the hook thread."""
+            held = False
+            while True:
+                event_signal.wait()
+                event_signal.clear()
+                with event_lock:
+                    events = event_queue[:]
+                    event_queue.clear()
+                for ev in events:
+                    if ev == "press":
+                        if not held:
+                            held = True
+                            on_press()
+                    else:
+                        if held:
+                            held = False
+                            on_release()
+
+        threading.Thread(target=_dispatcher, daemon=True, name="KeyDispatcher").start()
+        keyboard.on_press_key(key, _on_press, suppress=True)
+        keyboard.on_release_key(key, _on_release, suppress=True)
+        self._logger.debug("Registered push-to-talk key (suppress): %s", key)
 
     def send(self, combination: str) -> None:
         keyboard.send(combination)

@@ -27,7 +27,7 @@ _QML = textwrap.dedent(r"""
 
     Window {
         id: root
-        visible: false
+        visible: true
         width: 80
         height: 30
         x: (Screen.width - width) / 2
@@ -44,6 +44,10 @@ _QML = textwrap.dedent(r"""
         onAppStateChanged: {
             if (appState === "idle") {
                 fadeOut.start()
+            } else if (appState === "recording") {
+                // Instant appear — no fade delay on recording start
+                root.visible = true
+                orb.opacity = 1.0
             } else {
                 root.visible = true
                 fadeIn.start()

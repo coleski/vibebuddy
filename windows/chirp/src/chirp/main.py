@@ -83,6 +83,7 @@ class ChirpApp:
         )
 
         self._recording = False
+        self._processing = False
         self._lock = threading.Lock()
         self._stop_timer: Optional[threading.Timer] = None
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="Transcriber")
@@ -135,18 +136,24 @@ class ChirpApp:
     def _start_recording(self) -> None:
         t0 = time.perf_counter()
         self.logger.info("_start_recording called")
+        # Show UI + play sound immediately so user gets instant feedback
+        self._recording = True
+        self._overlay.set_state("recording")
+        t1 = time.perf_counter()
+        self.audio_feedback.play_start(self.config.start_sound_path)
+        self.logger.info("play_start took %.3fs, overlay+sound total %.3fs", time.perf_counter() - t1, time.perf_counter() - t0)
+        self._tray.set_recording(True)
+        # Then start capture + warm up model
         try:
             self.audio_capture.start()
         except Exception as exc:
             self.logger.error("Audio capture start failed: %s", exc)
+            self._recording = False
+            self._overlay.set_state("idle")
+            self._tray.set_recording(False)
             self.audio_feedback.play_error(self.config.error_sound_path)
             return
         self.logger.info("audio_capture.start() took %.3fs", time.perf_counter() - t0)
-        self._recording = True
-        self._tray.set_recording(True)
-        self._overlay.set_state("recording")
-        self.audio_feedback.play_start(self.config.start_sound_path)
-        # Warm up model in background so it's ready when recording stops
         threading.Thread(target=self.parakeet.warm_up, daemon=True, name="ModelWarmup").start()
         self.logger.info("Recording started (total _start_recording: %.3fs)", time.perf_counter() - t0)
 
@@ -174,37 +181,39 @@ class ChirpApp:
         self._tray.set_recording(False)
         self._overlay.set_state("processing")
         self.audio_feedback.play_stop(self.config.stop_sound_path)
+        self._processing = True
         self.logger.info("Recording stopped, submitting transcription")
         self._tray.set_processing(True)
         self._executor.submit(self._transcribe_and_inject, waveform)
 
     def _transcribe_and_inject(self, waveform) -> None:
         t0 = time.perf_counter()
-        if waveform.size == 0:
-            self.logger.warning("No audio samples captured")
-            return
-        self.logger.info("_transcribe_and_inject started (%d samples, %.2fs audio)",
-                         waveform.size, waveform.size / 16_000)
         try:
-            text = self.parakeet.transcribe(waveform, sample_rate=16_000, language=self.config.language)
-        except Exception as exc:
-            self.logger.exception("Transcription failed after %.3fs: %s", time.perf_counter() - t0, exc)
+            if waveform.size == 0:
+                self.logger.warning("No audio samples captured")
+                return
+            self.logger.info("_transcribe_and_inject started (%d samples, %.2fs audio)",
+                             waveform.size, waveform.size / 16_000)
+            try:
+                text = self.parakeet.transcribe(waveform, sample_rate=16_000, language=self.config.language)
+            except Exception as exc:
+                self.logger.exception("Transcription failed after %.3fs: %s", time.perf_counter() - t0, exc)
+                self.audio_feedback.play_error(self.config.error_sound_path)
+                return
+            transcribe_elapsed = time.perf_counter() - t0
+            self.logger.info("Transcription finished in %.3fs (chars=%d): %s",
+                             transcribe_elapsed, len(text), text[:100] if text else "(empty)")
+            if not text.strip():
+                self.logger.info("Transcription empty; skipping paste")
+                return
+            t_inject = time.perf_counter()
+            self.text_injector.inject(text)
+            self.logger.info("Text injected in %.3fs (total pipeline: %.3fs)",
+                             time.perf_counter() - t_inject, time.perf_counter() - t0)
+        finally:
+            self._processing = False
             self._tray.set_processing(False)
             self._overlay.set_state("idle")
-            self.audio_feedback.play_error(self.config.error_sound_path)
-            return
-        transcribe_elapsed = time.perf_counter() - t0
-        self.logger.info("Transcription finished in %.3fs (chars=%d): %s",
-                         transcribe_elapsed, len(text), text[:100] if text else "(empty)")
-        self._tray.set_processing(False)
-        self._overlay.set_state("idle")
-        if not text.strip():
-            self.logger.info("Transcription empty; skipping paste")
-            return
-        t_inject = time.perf_counter()
-        self.text_injector.inject(text)
-        self.logger.info("Text injected in %.3fs (total pipeline: %.3fs)",
-                         time.perf_counter() - t_inject, time.perf_counter() - t0)
 
     def _log_capture_status(self, message: str) -> None:
         self.logger.debug("Audio status: %s", message)
