@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 import logging
 import threading
 import time
@@ -70,7 +69,10 @@ class ParakeetManager:
                 idle_secs = time.time() - self._last_access
                 self._logger.info("Unloading Parakeet model after %.0fs idle (timeout=%.0fs)", idle_secs, self._timeout)
                 self._model = None
-                gc.collect()
+                # NOTE: intentionally no gc.collect() here — forcing GC while
+                # deallocating a large ONNX model stalls the GIL long enough
+                # for Windows to unhook the low-level keyboard hook, causing
+                # key suppression to fail (backtick leaks through).
 
     def ensure_loaded(self):
         with self._lock:

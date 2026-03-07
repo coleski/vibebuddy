@@ -39,7 +39,7 @@ class ChirpConfig:
     paste_mode: str = "ctrl"
     clipboard_behavior: bool = True
     clipboard_clear_delay: float = 0.75
-    model_timeout: float = 300.0
+    model_timeout: float = 0.0
     audio_feedback: bool = True
     audio_feedback_volume: float = 1.0
     start_sound_path: Optional[str] = None
