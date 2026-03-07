@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 import threading
+import time
 from typing import Callable, Optional
 
 import numpy as np
 import sounddevice as sd
+
+_log = logging.getLogger("chirp")
 
 
 class AudioCapture:
@@ -35,18 +39,24 @@ class AudioCapture:
                 self._frames.append(indata.copy())
 
         self._frames.clear()
+        t0 = time.perf_counter()
         self._stream = sd.InputStream(
             samplerate=self.sample_rate,
             channels=self.channels,
             dtype=self.dtype,
             callback=_callback,
         )
+        _log.info("InputStream created in %.3fs", time.perf_counter() - t0)
+        t1 = time.perf_counter()
         self._stream.start()
+        _log.info("InputStream.start() took %.3fs", time.perf_counter() - t1)
 
     def stop(self) -> np.ndarray:
         if self._stream is None:
             return np.empty(0, dtype=self.dtype)
+        t0 = time.perf_counter()
         self._stream.stop()
+        _log.info("InputStream.stop() took %.3fs", time.perf_counter() - t0)
         self._stream.close()
         self._stream = None
         with self._lock:

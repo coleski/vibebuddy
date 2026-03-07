@@ -23,10 +23,13 @@ from .tray_icon import TrayIcon
 
 class ChirpApp:
     def __init__(self, *, verbose: bool = False) -> None:
+        t_init = time.perf_counter()
         level = logging.DEBUG if verbose else logging.INFO
         self.logger = get_logger(level=level)
+        self.logger.info("=== Chirp startup begin ===")
         self.config_manager = ConfigManager()
         self.config = self.config_manager.load()
+        self.logger.info("Config loaded in %.3fs", time.perf_counter() - t_init)
         model_dir = self.config_manager.model_dir(self.config.parakeet_model, self.config.parakeet_quantization)
         self.logger.debug(
             "Environment: platform=%s python=%s config=%s models=%s",
@@ -51,8 +54,10 @@ class ChirpApp:
             enabled=self.config.audio_feedback,
             volume=self.config.audio_feedback_volume,
         )
+        self.logger.info("Audio subsystems initialized in %.3fs", time.perf_counter() - t_init)
 
         try:
+            t_model = time.perf_counter()
             self.logger.info("Initializing Parakeet model...")
             self.parakeet = ParakeetManager(
                     model_name=self.config.parakeet_model,
@@ -66,6 +71,7 @@ class ChirpApp:
         except ModelNotPreparedError as exc:
             self.logger.error(str(exc))
             raise SystemExit(1) from exc
+        self.logger.info("Parakeet model initialized in %.3fs", time.perf_counter() - t_model)
         self.text_injector = TextInjector(
             keyboard_manager=self.keyboard,
             logger=self.logger,
@@ -83,6 +89,7 @@ class ChirpApp:
         self._stop_event = threading.Event()
         self._tray = TrayIcon(on_quit=self._stop_event.set)
         self._overlay = OverlayOrb()
+        self.logger.info("=== Chirp startup complete in %.3fs ===", time.perf_counter() - t_init)
 
     def run(self) -> None:
         try:
@@ -126,18 +133,22 @@ class ChirpApp:
                 self._stop_recording()
 
     def _start_recording(self) -> None:
-        self.logger.debug("Starting audio capture")
+        t0 = time.perf_counter()
+        self.logger.info("_start_recording called")
         try:
             self.audio_capture.start()
         except Exception as exc:
             self.logger.error("Audio capture start failed: %s", exc)
             self.audio_feedback.play_error(self.config.error_sound_path)
             return
+        self.logger.info("audio_capture.start() took %.3fs", time.perf_counter() - t0)
         self._recording = True
         self._tray.set_recording(True)
         self._overlay.set_state("recording")
         self.audio_feedback.play_start(self.config.start_sound_path)
-        self.logger.info("Recording started")
+        # Warm up model in background so it's ready when recording stops
+        threading.Thread(target=self.parakeet.warm_up, daemon=True, name="ModelWarmup").start()
+        self.logger.info("Recording started (total _start_recording: %.3fs)", time.perf_counter() - t0)
 
         if self.config.max_recording_duration > 0:
             self._stop_timer = threading.Timer(
@@ -150,42 +161,50 @@ class ChirpApp:
         self.toggle_recording()
 
     def _stop_recording(self) -> None:
+        t0 = time.perf_counter()
         if self._stop_timer:
             self._stop_timer.cancel()
             self._stop_timer = None
 
-        self.logger.debug("Stopping audio capture")
+        self.logger.info("_stop_recording called")
         waveform = self.audio_capture.stop()
+        self.logger.info("audio_capture.stop() took %.3fs (%d samples, %.2fs audio)",
+                         time.perf_counter() - t0, waveform.size, waveform.size / 16_000 if waveform.size > 0 else 0)
         self._recording = False
         self._tray.set_recording(False)
         self._overlay.set_state("processing")
         self.audio_feedback.play_stop(self.config.stop_sound_path)
-        self.logger.info("Recording stopped (%s samples)", waveform.size)
+        self.logger.info("Recording stopped, submitting transcription")
         self._tray.set_processing(True)
         self._executor.submit(self._transcribe_and_inject, waveform)
 
     def _transcribe_and_inject(self, waveform) -> None:
-        start_time = time.perf_counter()
+        t0 = time.perf_counter()
         if waveform.size == 0:
             self.logger.warning("No audio samples captured")
             return
+        self.logger.info("_transcribe_and_inject started (%d samples, %.2fs audio)",
+                         waveform.size, waveform.size / 16_000)
         try:
             text = self.parakeet.transcribe(waveform, sample_rate=16_000, language=self.config.language)
         except Exception as exc:
-            self.logger.exception("Transcription failed: %s", exc)
+            self.logger.exception("Transcription failed after %.3fs: %s", time.perf_counter() - t0, exc)
             self._tray.set_processing(False)
             self._overlay.set_state("idle")
             self.audio_feedback.play_error(self.config.error_sound_path)
             return
-        duration = time.perf_counter() - start_time
-        self.logger.debug("Transcription finished in %.2fs (chars=%s)", duration, len(text))
+        transcribe_elapsed = time.perf_counter() - t0
+        self.logger.info("Transcription finished in %.3fs (chars=%d): %s",
+                         transcribe_elapsed, len(text), text[:100] if text else "(empty)")
         self._tray.set_processing(False)
         self._overlay.set_state("idle")
         if not text.strip():
             self.logger.info("Transcription empty; skipping paste")
             return
-        self.logger.debug("Transcription: %s", text)
+        t_inject = time.perf_counter()
         self.text_injector.inject(text)
+        self.logger.info("Text injected in %.3fs (total pipeline: %.3fs)",
+                         time.perf_counter() - t_inject, time.perf_counter() - t0)
 
     def _log_capture_status(self, message: str) -> None:
         self.logger.debug("Audio status: %s", message)

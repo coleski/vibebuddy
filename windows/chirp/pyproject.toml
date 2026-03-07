@@ -19,6 +19,7 @@ dependencies = [
     "sounddevice>=0.5.3",
     "pystray>=0.19.5",
     "Pillow>=10.0.0",
+    "PySide6-Essentials>=6.7",
 ]
 
 [project.scripts]

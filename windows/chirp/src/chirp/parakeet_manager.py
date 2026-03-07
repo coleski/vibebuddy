@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 
 import numpy as np
 import onnx_asr
-from onnx_asr.loader import ModelFileNotFoundError, ModelPathNotFoundError
+from onnx_asr.loader import ModelFileNotFoundError, ModelPathNotDirectoryError
 
 try:
     import onnxruntime as ort
@@ -67,15 +67,19 @@ class ParakeetManager:
     def _unload_model(self) -> None:
         with self._lock:
             if self._model is not None and (time.time() - self._last_access > self._timeout):
-                self._logger.info("Unloading Parakeet model to free memory.")
+                idle_secs = time.time() - self._last_access
+                self._logger.info("Unloading Parakeet model after %.0fs idle (timeout=%.0fs)", idle_secs, self._timeout)
                 self._model = None
                 gc.collect()
 
     def ensure_loaded(self):
         with self._lock:
             if self._model is None:
-                self._logger.info("Reloading Parakeet model...")
+                self._logger.info("Reloading Parakeet model (cold start)...")
+                t0 = time.perf_counter()
                 self._model = self._load_model()
+                elapsed = time.perf_counter() - t0
+                self._logger.info("Cold-start reload completed in %.2fs", elapsed)
             return self._model
 
     def _resolve_providers(self, key: str) -> Sequence[str]:
@@ -110,27 +114,62 @@ class ParakeetManager:
             ",".join(self._providers),
         )
         self._model_dir.mkdir(parents=True, exist_ok=True)
+        t0 = time.perf_counter()
         try:
-            return onnx_asr.load_model(
+            model = onnx_asr.load_model(
                 self._model_name,
                 path=str(self._model_dir),
                 quantization=self._quantization,
                 providers=self._providers,
                 sess_options=self._session_options,
             )
-        except (ModelPathNotFoundError, ModelFileNotFoundError) as exc:
+        except (ModelPathNotDirectoryError, ModelFileNotFoundError) as exc:
             raise ModelNotPreparedError(
                 f"Model not found at {self._model_dir} — run: uv run chirp-setup"
             ) from exc
+        elapsed = time.perf_counter() - t0
+        self._logger.info("Model loaded in %.2fs", elapsed)
+        return model
+
+    def warm_up(self) -> None:
+        """Ensure model is loaded and run a tiny inference to warm up ONNX caches.
+
+        Call this at recording-start so the model is hot by recording-stop.
+        """
+        t0 = time.perf_counter()
+        model = self.ensure_loaded()
+        load_elapsed = time.perf_counter() - t0
+        # Run a minimal inference to warm up ONNX session internals
+        t1 = time.perf_counter()
+        try:
+            dummy = np.zeros(1600, dtype=np.float32)  # 0.1s of silence
+            model.recognize(dummy, sample_rate=16_000)
+        except Exception:
+            pass  # warmup failure is non-fatal
+        warmup_elapsed = time.perf_counter() - t1
+        self._logger.info("Model warm-up: load=%.3fs, dummy_infer=%.3fs, total=%.3fs",
+                          load_elapsed, warmup_elapsed, time.perf_counter() - t0)
 
     def transcribe(self, audio: np.ndarray, *, sample_rate: int = 16_000, language: Optional[str] = None) -> str:
+        t_total = time.perf_counter()
         with self._lock:
             self._last_access = time.time()
+        t0 = time.perf_counter()
         model = self.ensure_loaded()
+        self._logger.info("ensure_loaded took %.3fs", time.perf_counter() - t0)
         if audio.ndim > 1:
             audio = audio.reshape(-1)
         waveform = audio.astype(np.float32, copy=False)
         if waveform.size == 0:
             return ""
+        audio_duration = waveform.size / sample_rate
+        self._logger.info("Transcribing %.2fs of audio (%d samples)", audio_duration, waveform.size)
+        t0 = time.perf_counter()
         result = model.recognize(waveform, sample_rate=sample_rate, language=language)
+        recognize_elapsed = time.perf_counter() - t0
+        total_elapsed = time.perf_counter() - t_total
+        self._logger.info(
+            "model.recognize took %.3fs (total transcribe: %.3fs, RTF: %.2fx)",
+            recognize_elapsed, total_elapsed, recognize_elapsed / audio_duration if audio_duration > 0 else 0,
+        )
         return result if isinstance(result, str) else str(result)
