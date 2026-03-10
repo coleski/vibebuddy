@@ -1,11 +1,15 @@
 """System tray icon for Chirp — pill + face style ported from VibeBuddy."""
 from __future__ import annotations
 
+import os
+import subprocess
 import threading
 from typing import Callable, Optional
 
 from PIL import Image, ImageDraw
 import pystray
+
+from .logger import LOG_PATH
 
 
 def _draw_pill(draw: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, fill, outline=None, outline_width: int = 0) -> None:
@@ -80,8 +84,9 @@ def _make_icon(recording: bool, processing: bool = False) -> Image.Image:
 
 
 class TrayIcon:
-    def __init__(self, *, on_quit: Callable[[], None]) -> None:
+    def __init__(self, *, on_quit: Callable[[], None], on_restart: Optional[Callable[[], None]] = None) -> None:
         self._on_quit = on_quit
+        self._on_restart = on_restart
         self._icon: Optional[pystray.Icon] = None
         self._recording = False
         self._processing = False
@@ -93,11 +98,28 @@ class TrayIcon:
             status = "⋯ Processing"
         else:
             status = "○ Idle"
-        return pystray.Menu(
+        items = [
             pystray.MenuItem(f"Chirp  —  {status}", None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit", self._quit),
-        )
+        ]
+        items.append(pystray.MenuItem("Show Log", self._show_log))
+        if self._on_restart:
+            items.append(pystray.MenuItem("Restart", self._restart))
+        items.append(pystray.MenuItem("Quit", self._quit))
+        return pystray.Menu(*items)
+
+    def _show_log(self, icon: pystray.Icon, item) -> None:
+        if LOG_PATH.exists():
+            subprocess.Popen(
+                ["powershell", "-Command", f"Get-Content -Path '{LOG_PATH}' -Tail 50 -Wait"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        else:
+            os.startfile(LOG_PATH.parent)
+
+    def _restart(self, icon: pystray.Icon, item) -> None:
+        if self._on_restart:
+            self._on_restart()
 
     def _quit(self, icon: pystray.Icon, item) -> None:
         icon.stop()

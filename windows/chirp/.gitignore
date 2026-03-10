@@ -8,3 +8,6 @@ build/
 
 # Large model files — download via chirp-setup, don't commit
 src/chirp/assets/models/
+
+# Runtime logs
+*.log

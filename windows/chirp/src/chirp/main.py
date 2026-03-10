@@ -4,8 +4,11 @@ import argparse
 import concurrent.futures
 import logging
 import platform
+import subprocess
+import sys
 import threading
 import time
+
 from typing import Optional, Sequence
 
 import numpy as np
@@ -88,9 +91,19 @@ class ChirpApp:
         self._stop_timer: Optional[threading.Timer] = None
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="Transcriber")
         self._stop_event = threading.Event()
-        self._tray = TrayIcon(on_quit=self._stop_event.set)
+        self._restart_requested = False
+        self._tray = TrayIcon(on_quit=self._stop_event.set, on_restart=self._request_restart)
         self._overlay = OverlayOrb()
         self.logger.info("=== Chirp startup complete in %.3fs ===", time.perf_counter() - t_init)
+
+    def _request_restart(self) -> None:
+        self.logger.info("Restart requested from tray menu")
+        self._restart_requested = True
+        self._stop_event.set()
+
+    @property
+    def restart_requested(self) -> bool:
+        return self._restart_requested
 
     def run(self) -> None:
         try:
@@ -252,6 +265,20 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         return
     app = ChirpApp(verbose=args.verbose)
     app.run()
+    if app.restart_requested:
+        # Spawn a detached replacement process and exit.
+        # Use sys.executable -m chirp.main to avoid entry-point script issues on Windows.
+        cmd = [sys.executable, "-m", "chirp.main"]
+        if args.verbose:
+            cmd.append("--verbose")
+        subprocess.Popen(
+            cmd,
+            creationflags=(
+                subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.CREATE_NO_WINDOW
+            ),
+        )
 
 
 def _run_smoke_check(*, verbose: bool = False) -> None:
