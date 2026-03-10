@@ -13,7 +13,7 @@ audio_feedback = true                           # Enables start/stop chime playb
 audio_feedback_volume = 0.25                    # Volume for audio feedback as a fraction of system volume (0.0 to 1.0). Requires sounddevice; winsound-only systems ignore this.
 start_sound_path = ""                           # Leave blank to use bundled asset; default: src/chirp/assets/ping-up.wav
 stop_sound_path = ""                            # Leave blank to use bundled asset; default: src/chirp/assets/ping-down.wav
-max_recording_duration = 45.0                   # Automatic stop recording after X seconds (default: 45s).
+max_recording_duration = 0                       # 0 = no limit; set a positive number to auto-stop after that many seconds.
 
 # Word overrides map spoken tokens (case-insensitive) to replacement text.
 [word_overrides]

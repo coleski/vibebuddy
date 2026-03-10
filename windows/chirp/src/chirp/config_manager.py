@@ -45,7 +45,7 @@ class ChirpConfig:
     start_sound_path: Optional[str] = None
     stop_sound_path: Optional[str] = None
     error_sound_path: Optional[str] = None
-    max_recording_duration: float = 45.0
+    max_recording_duration: float = 0.0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChirpConfig":
