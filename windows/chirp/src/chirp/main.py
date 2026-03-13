@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import ctypes
 import logging
 import platform
 import subprocess
@@ -87,6 +88,7 @@ class ChirpApp:
 
         self._recording = False
         self._processing = False
+        self._target_hwnd = 0  # foreground window saved before overlay appears
         self._lock = threading.Lock()
         self._stop_timer: Optional[threading.Timer] = None
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="Transcriber")
@@ -114,7 +116,11 @@ class ChirpApp:
         except KeyboardInterrupt:
             self.logger.info("Interrupted, exiting.")
         finally:
+            self.logger.info("Shutting down...")
             self._tray.stop()
+            self.keyboard.cleanup()
+            self._executor.shutdown(wait=False)
+            self.logger.info("Shutdown complete.")
 
     def _register_hotkey(self) -> None:
         self.logger.debug("Registering push-to-talk key: %s", self.config.primary_shortcut)
@@ -149,6 +155,10 @@ class ChirpApp:
     def _start_recording(self) -> None:
         t0 = time.perf_counter()
         self.logger.info("_start_recording called")
+        # Save the foreground window BEFORE the overlay appears so we can
+        # restore focus when pasting the transcription result.
+        if sys.platform == "win32":
+            self._target_hwnd = ctypes.windll.user32.GetForegroundWindow()  # type: ignore[attr-defined]
         # Show UI + play sound immediately so user gets instant feedback
         self._recording = True
         self._overlay.set_state("recording")
@@ -220,7 +230,7 @@ class ChirpApp:
                 self.logger.info("Transcription empty; skipping paste")
                 return
             t_inject = time.perf_counter()
-            self.text_injector.inject(text)
+            self.text_injector.inject(text, target_hwnd=self._target_hwnd)
             self.logger.info("Text injected in %.3fs (total pipeline: %.3fs)",
                              time.perf_counter() - t_inject, time.perf_counter() - t0)
         finally:
@@ -258,11 +268,31 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _acquire_single_instance_lock() -> Optional[ctypes.c_void_p]:
+    """Try to acquire a Windows named mutex. Returns the handle if we're the
+    first instance, or ``None`` if another Chirp is already running."""
+    if sys.platform != "win32":
+        return ctypes.c_void_p(1)  # no-op on non-Windows
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    ERROR_ALREADY_EXISTS = 183
+    handle = kernel32.CreateMutexW(None, False, "Global\\ChirpDictationSingleInstance")
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        return None
+    return handle
+
+
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = _build_parser().parse_args(argv)
     if args.check:
         _run_smoke_check(verbose=args.verbose)
         return
+
+    mutex = _acquire_single_instance_lock()
+    if mutex is None:
+        print("Chirp is already running.", file=sys.stderr)
+        raise SystemExit(0)
+
     app = ChirpApp(verbose=args.verbose)
     app.run()
     if app.restart_requested:

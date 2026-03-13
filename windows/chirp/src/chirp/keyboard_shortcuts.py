@@ -68,5 +68,9 @@ class KeyboardShortcutManager:
     def write(self, text: str) -> None:
         keyboard.write(text)
 
+    def cleanup(self) -> None:
+        """Remove all keyboard hooks so the process can exit cleanly."""
+        keyboard.unhook_all()
+
     def wait(self) -> None:
         keyboard.wait()

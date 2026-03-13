@@ -102,7 +102,7 @@ class TextInjector:
         result = "".join(safe_chars)
         return result.strip() if strip_text else result
 
-    def inject(self, text: str) -> None:
+    def inject(self, text: str, *, target_hwnd: int = 0) -> None:
         processed = self.process(text)
 
         # Use clipboard paste on all platforms — keyboard.write() is unreliable on Windows
@@ -114,9 +114,8 @@ class TextInjector:
             return
         time.sleep(0.15)  # Brief delay for focus settling after recording stops
         try:
-            # Windows apps universally use Ctrl+V; honour paste_mode only on non-Windows
             if sys.platform.startswith("win"):
-                self._keyboard.send("ctrl+v")
+                self._paste_win32(target_hwnd)
             else:
                 combo = "ctrl+v" if self._paste_mode == "ctrl" else "ctrl+shift+v"
                 self._keyboard.send(combo)
@@ -124,6 +123,33 @@ class TextInjector:
             self._logger.error("Paste injection failed: %s", exc)
         if self._clipboard_behavior:
             self._schedule_clipboard_clear()
+
+    def _paste_win32(self, target_hwnd: int = 0) -> None:
+        """Restore focus to the pre-recording window and send Ctrl+V via Win32 API.
+
+        Using ctypes directly avoids interference from the keyboard library's
+        low-level hook (registered with suppress=True for push-to-talk).
+        """
+        import ctypes
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+
+        if target_hwnd:
+            VK_MENU = 0x12
+            KEYEVENTF_EXTENDEDKEY = 0x0001
+            KEYEVENTF_KEYUP = 0x0002
+            # Alt press/release trick lets SetForegroundWindow succeed from background
+            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY, 0)
+            user32.keybd_event(VK_MENU, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0)
+            user32.SetForegroundWindow(target_hwnd)
+            time.sleep(0.05)
+
+        VK_CONTROL = 0x11
+        VK_V = 0x56
+        KEYEVENTF_KEYUP = 0x0002
+        user32.keybd_event(VK_CONTROL, 0, 0, 0)
+        user32.keybd_event(VK_V, 0, 0, 0)
+        user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
+        user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 
     def _schedule_clipboard_clear(self) -> None:
         def _clear() -> None:

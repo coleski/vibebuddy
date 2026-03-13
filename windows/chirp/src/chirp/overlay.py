@@ -275,6 +275,7 @@ _QML = textwrap.dedent(r"""
 
                     // Smile mouth
                     Canvas {
+                        id: smileCanvas
                         visible: appState === "processing" && face.expression === "smile"
                         width: 8
                         height: 4
@@ -294,7 +295,7 @@ _QML = textwrap.dedent(r"""
                             target: root
                             function onRainbowHueChanged() {
                                 if (face.expression === "smile")
-                                    parent.children[1].requestPaint()
+                                    smileCanvas.requestPaint()
                             }
                         }
                     }
